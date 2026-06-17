@@ -150,29 +150,44 @@ export default function SettingsPage() {
       const savedOrientation = localStorage.getItem("printerOrientation");
       if (savedOrientation) setPrinterOrientation(savedOrientation);
 
-      const savedWelcomeBg = localStorage.getItem("welcomeBgImage");
-      if (savedWelcomeBg) setWelcomeBgImage(savedWelcomeBg);
+      const savedBg = localStorage.getItem("welcomeBgImage");
+      if (savedBg) setWelcomeBgImage(savedBg);
 
-      const savedCanvas = localStorage.getItem("enabledCanvas");
-      if (savedCanvas) {
+      const savedCanvasRaw = localStorage.getItem("enabledCanvas");
+      if (savedCanvasRaw) {
         try {
-          setEnabledCanvas(JSON.parse(savedCanvas));
-        } catch (e) {
-          console.error("Failed to parse enabledCanvas", e);
-        }
+          setEnabledCanvas(JSON.parse(savedCanvasRaw));
+        } catch(e) {}
       }
 
       const savedTimeout = localStorage.getItem("sessionTimeout");
       if (savedTimeout) setSessionTimeout(parseInt(savedTimeout, 10));
-    } catch (e) {
-      console.error("Error fetching hardware:", e);
+
+    } catch (err) {
+      console.error("Hardware fetch err:", err);
     }
   }, []);
+
+  const [uploadedBackgrounds, setUploadedBackgrounds] = useState<string[]>([]);
+  const [isUploadingBg, setIsUploadingBg] = useState(false);
+
+  const fetchBackgrounds = async () => {
+    try {
+      const res = await fetch("/api/backgrounds");
+      const json = await res.json();
+      if (json.success) {
+        setUploadedBackgrounds(json.data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch backgrounds", e);
+    }
+  };
 
   useEffect(() => {
     fetchEnv();
     fetchHardware();
     fetchQueue();
+    fetchBackgrounds();
     const interval = setInterval(fetchQueue, 5000);
     return () => clearInterval(interval);
   }, [fetchEnv, fetchHardware]);
@@ -582,12 +597,64 @@ export default function SettingsPage() {
                          <label className="block text-sm font-bold text-slate-700 mb-1">Background Seluruh Halaman</label>
                          <p className="text-[11px] text-slate-400 mb-3">Pilih gambar kustom untuk latar belakang seluruh halaman aplikasi.</p>
                          
-                         {welcomeBgImage && (
-                           <div className="mb-3 relative w-full h-40 rounded-xl overflow-hidden border border-slate-200">
+                         {/* Grid of uploaded backgrounds */}
+                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+                           {uploadedBackgrounds.map((bgUrl) => (
+                             <div 
+                               key={bgUrl} 
+                               className={`relative group cursor-pointer rounded-xl overflow-hidden border-2 transition-all aspect-video ${welcomeBgImage === bgUrl ? 'border-purple-500 shadow-md ring-2 ring-purple-500/30' : 'border-slate-200 hover:border-slate-300'}`}
+                             >
+                               {/* eslint-disable-next-line @next/next/no-img-element */}
+                               <img onClick={() => setWelcomeBgImage(bgUrl)} src={bgUrl} alt="Background" className="w-full h-full object-cover" />
+                               {welcomeBgImage === bgUrl && (
+                                 <div className="absolute top-2 left-2 bg-purple-500 text-white rounded-full p-1 shadow-md pointer-events-none">
+                                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                 </div>
+                               )}
+                               <button 
+                                 onClick={async (e) => {
+                                   e.stopPropagation();
+                                   if (!confirm("Hapus background ini secara permanen?")) return;
+                                   try {
+                                     const filename = bgUrl.split('/').pop();
+                                     const res = await fetch(`/api/backgrounds?file=${filename}`, { method: 'DELETE' });
+                                     const data = await res.json();
+                                     if (data.success) {
+                                       if (welcomeBgImage === bgUrl) setWelcomeBgImage("");
+                                       fetchBackgrounds();
+                                     } else {
+                                       alert('Gagal menghapus: ' + data.message);
+                                     }
+                                   } catch (e) {
+                                     alert('Terjadi kesalahan saat menghapus');
+                                   }
+                                 }}
+                                 className="absolute top-2 right-2 bg-rose-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-600 shadow-md"
+                               >
+                                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                               </button>
+                             </div>
+                           ))}
+                         </div>
+                         
+                         {uploadedBackgrounds.length > 0 && welcomeBgImage && (
+                           <div className="mb-4">
+                             <button onClick={() => setWelcomeBgImage("")} className="text-xs font-bold text-rose-500 hover:text-rose-600 transition-colors flex items-center gap-1">
+                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                               Hapus Latar Belakang Aktif
+                             </button>
+                           </div>
+                         )}
+                         
+                         {welcomeBgImage && !uploadedBackgrounds.includes(welcomeBgImage) && (
+                           <div className="mb-3 relative w-full sm:w-1/2 h-32 rounded-xl overflow-hidden border-2 border-purple-500 ring-2 ring-purple-500/30 shadow-md">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={welcomeBgImage} alt="Welcome BG" className="w-full h-full object-cover" />
-                              <button onClick={() => setWelcomeBgImage("")} className="absolute top-2 right-2 bg-rose-500 text-white rounded-full p-2 shadow-md hover:bg-rose-600 transition-colors">
-                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                              <div className="absolute top-2 right-2 bg-purple-500 text-white rounded-full p-1 shadow-md">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                              </div>
+                              <button onClick={() => setWelcomeBgImage("")} className="absolute bottom-2 right-2 bg-rose-500 text-white rounded-full p-1.5 shadow-md hover:bg-rose-600 transition-colors">
+                                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                               </button>
                            </div>
                          )}
@@ -595,19 +662,37 @@ export default function SettingsPage() {
                          <input
                            type="file"
                            accept="image/*"
-                           onChange={(e) => {
+                           disabled={isUploadingBg || uploadedBackgrounds.length >= 5}
+                           onChange={async (e) => {
                              const file = e.target.files?.[0];
                              if (file) {
-                               const reader = new FileReader();
-                               reader.onload = (evt) => {
-                                 if (evt.target?.result) setWelcomeBgImage(evt.target.result as string);
-                               };
-                               reader.readAsDataURL(file);
+                               setIsUploadingBg(true);
+                               try {
+                                 const formData = new FormData();
+                                 formData.append('file', file);
+                                 const res = await fetch('/api/backgrounds', {
+                                   method: 'POST',
+                                   body: formData
+                                 });
+                                 const data = await res.json();
+                                 if (data.success) {
+                                   setWelcomeBgImage(data.url);
+                                   fetchBackgrounds(); // Refresh list
+                                 } else {
+                                   alert('Gagal mengupload background: ' + data.message);
+                                 }
+                               } catch (err) {
+                                 alert('Terjadi kesalahan saat upload');
+                               } finally {
+                                 setIsUploadingBg(false);
+                               }
                              }
                            }}
-                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400 transition-all file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
+                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400 transition-all file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed"
                          />
-                       </div>
+                         {isUploadingBg && <p className="text-xs text-purple-600 mt-2 font-bold animate-pulse">Mengupload gambar...</p>}
+                         {uploadedBackgrounds.length >= 5 && <p className="text-xs text-rose-500 mt-2 font-bold">Batas maksimal 5 gambar tercapai. Hapus gambar lama untuk mengupload yang baru.</p>}
+                        </div>
                      </div>
                    </div>
 

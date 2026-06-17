@@ -71,7 +71,7 @@ export default function Home() {
 
       <main className="relative flex flex-1 flex-col items-center justify-center text-center z-10">
           <h1 className={`text-[clamp(3rem,10vw,5rem)] leading-none tracking-tight text-white font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] ${poppins.className}`}>
-            CTECHBOOTH
+            
           </h1>
           <button
             type="button"

@@ -6,6 +6,11 @@ import QRCode from "react-qr-code";
 import localforage from "localforage";
 import { Poppins } from "next/font/google";
 
+import dynamic from "next/dynamic";
+import "react-simple-keyboard/build/css/index.css";
+
+const Keyboard = dynamic(() => import("react-simple-keyboard"), { ssr: false });
+
 const poppins = Poppins({
   subsets: ["latin"],
   weight: ["400", "600", "700", "900"],
@@ -195,6 +200,14 @@ function PrintContent() {
   const [pendingPrintQty, setPendingPrintQty] = useState(1);
   const [pendingPrintAmount, setPendingPrintAmount] = useState(0);
   const [customBgImage, setCustomBgImage] = useState<string>("");
+
+  const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
+  const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
+  const [voucherCode, setVoucherCode] = useState("");
+  const [isVerifyingVoucher, setIsVerifyingVoucher] = useState(false);
+  const [voucherError, setVoucherError] = useState<string | null>(null);
+  const [showVoucherKeyboard, setShowVoucherKeyboard] = useState(false);
+  const keyboardRef = useRef<any>(null);
 
   useEffect(() => {
     const savedBg = localStorage.getItem("welcomeBgImage");
@@ -576,11 +589,61 @@ function PrintContent() {
         const qtyToPay = hasPrinted ? printCopies : (printCopies - 1);
         
         if (qtyToPay > 0) {
-            handleExtraPrintPayment(unitPrice * qtyToPay, printCopies, size);
+            setPendingPrintQty(printCopies);
+            setPendingPrintAmount(unitPrice * qtyToPay);
+            setIsPaymentMethodModalOpen(true);
         } else {
             // Fallback: This shouldn't normally happen if logic is correct
             handlePrint(false, 1, size);
         }
+    }
+  };
+
+  const handleVoucherInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+    setVoucherCode(value);
+    setVoucherError(null);
+    if (keyboardRef.current) keyboardRef.current.setInput(value);
+  };
+
+  const onVoucherKeyboardChange = (input: string) => {
+    const value = input.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+    setVoucherCode(value);
+    setVoucherError(null);
+    if (keyboardRef.current) keyboardRef.current.setInput(value);
+  };
+
+  const handleVoucherSubmit = async () => {
+    if (voucherCode.length < 8) return;
+    setIsVerifyingVoucher(true);
+    setVoucherError(null);
+
+    try {
+      const response = await fetch(`/api/vouchers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: voucherCode, type: canvasType })
+      });
+      const result = await response.json();
+
+      if (response.ok && result.valid) {
+        const discount = result.data?.discount_percentage ?? 100;
+        if (discount === 100) {
+          setIsVoucherModalOpen(false);
+          handlePrint(true, pendingPrintQty, selectedPrintSize);
+        } else {
+          // Calculate discounted amount
+          const discountedAmount = pendingPrintAmount * (1 - (discount / 100));
+          setIsVoucherModalOpen(false);
+          handleExtraPrintPayment(discountedAmount, pendingPrintQty, selectedPrintSize);
+        }
+      } else {
+        setVoucherError(result.message || "Kode voucher tidak valid!");
+      }
+    } catch (error) {
+      setVoucherError("Gagal menghubungi server.");
+    } finally {
+      setIsVerifyingVoucher(false);
     }
   };
 
@@ -655,7 +718,7 @@ function PrintContent() {
   // ── Auto-redirect to home after 15s when upload is done ──
   useEffect(() => {
     if (uploadStage === "success") {
-      setAutoRedirectCountdown(15);
+      setAutoRedirectCountdown(120);
       const interval = setInterval(() => {
         setAutoRedirectCountdown((prev) => {
           if (prev === null || prev <= 1) {
@@ -743,7 +806,7 @@ function PrintContent() {
     );
   }
 
-  const downloadUrl = `https://dashboard.ctechcreative.com/downloads/${downloadToken}`;
+  const downloadUrl = `https://mooeinsnap.com/downloads/${downloadToken}`;
 
   return (
     <div className="relative h-screen w-full overflow-hidden p-2 sm:p-3 font-sans text-slate-900 flex flex-col" style={{ backgroundImage: customBgImage ? `url(${customBgImage})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}>
@@ -945,6 +1008,121 @@ function PrintContent() {
         </footer>
 
       </div>
+
+      {/* Payment Method Modal for Extra Print */}
+      {isPaymentMethodModalOpen && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900/60 p-6 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="w-full max-w-lg animate-in zoom-in-95 rounded-[3rem] bg-white p-8 shadow-2xl duration-300 flex flex-col gap-4">
+            <h2 className="text-center text-2xl font-black text-slate-800 mb-4 uppercase tracking-widest">Metode Pembayaran</h2>
+            <div className="flex flex-col sm:flex-row gap-4 w-full">
+              <button
+                onClick={() => {
+                  setIsPaymentMethodModalOpen(false);
+                  handleExtraPrintPayment(pendingPrintAmount, pendingPrintQty, selectedPrintSize);
+                }}
+                className="flex-1 flex flex-col items-center justify-center rounded-2xl border-2 border-slate-200 bg-slate-50 p-6 hover:bg-slate-100 hover:border-slate-300 transition-all"
+              >
+                <div className="w-16 h-16 mb-4 flex items-center justify-center rounded-full bg-orange-100 text-orange-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="5" height="5" x="3" y="3" rx="1" /><rect width="5" height="5" x="16" y="3" rx="1" /><rect width="5" height="5" x="3" y="16" rx="1" /><path d="M21 16h-3a2 2 0 0 0-2 2v3" /><path d="M21 21v.01" /><path d="M12 7v3a2 2 0 0 1-2 2H7" /><path d="M3 12h.01" /><path d="M12 3h.01" /><path d="M12 16v.01" /><path d="M16 12h1" /><path d="M21 12v.01" /><path d="M12 21v-1" /></svg>
+                </div>
+                <span className="font-black text-slate-700 uppercase">QRIS</span>
+              </button>
+              
+              <button
+                onClick={() => {
+                  setIsPaymentMethodModalOpen(false);
+                  setIsVoucherModalOpen(true);
+                }}
+                className="flex-1 flex flex-col items-center justify-center rounded-2xl border-2 border-slate-200 bg-slate-50 p-6 hover:bg-slate-100 hover:border-slate-300 transition-all"
+              >
+                <div className="w-16 h-16 mb-4 flex items-center justify-center rounded-full bg-blue-100 text-blue-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5" /><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z" /></svg>
+                </div>
+                <span className="font-black text-slate-700 uppercase">VOUCHER</span>
+              </button>
+            </div>
+            <button onClick={() => setIsPaymentMethodModalOpen(false)} className="mt-4 w-full rounded-full bg-slate-100 py-4 font-bold text-slate-500 hover:bg-slate-200">
+              BATAL
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Voucher Modal */}
+      {isVoucherModalOpen && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900/60 p-6 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="w-full max-w-sm animate-in zoom-in-95 rounded-3xl bg-white p-8 shadow-2xl duration-300">
+            <div className="mb-6 flex flex-col items-center">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-600/15 text-blue-600">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5" /><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z" /></svg>
+              </div>
+              <h3 className="text-2xl font-extrabold text-slate-900">Kode Voucher</h3>
+              <p className="mt-2 px-2 text-center text-sm font-medium text-slate-500">Masukkan 8 digit kode voucher Anda.</p>
+            </div>
+            
+            <input
+              type="text"
+              maxLength={8}
+              value={voucherCode}
+              onFocus={() => {
+                setShowVoucherKeyboard(true);
+                if (keyboardRef.current) keyboardRef.current.setInput(voucherCode);
+              }}
+              onChange={handleVoucherInput}
+              placeholder="XXXXXXXX"
+              className={`mb-2 w-full rounded-2xl border-2 bg-slate-50 px-6 py-4 text-center text-3xl font-black uppercase tracking-[0.25em] text-slate-800 placeholder:text-slate-300 transition-all focus:outline-none focus:ring-4 ${voucherError ? "border-rose-400 focus:border-rose-500 focus:ring-rose-500/20" : "border-blue-600/20 focus:border-blue-600 focus:ring-blue-600/20"}`}
+            />
+            
+            <div className="mb-4 flex h-6 w-full items-center justify-center">
+              {voucherError && (
+                <p className="flex animate-in slide-in-from-top-2 items-center gap-1.5 text-sm font-bold text-rose-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" /></svg>
+                  {voucherError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex w-full items-center gap-3">
+              <button
+                type="button"
+                onClick={() => { setIsVoucherModalOpen(false); setShowVoucherKeyboard(false); }}
+                className="flex-1 rounded-full py-3.5 font-bold text-slate-500 transition-colors hover:bg-slate-100"
+              >
+                BATAL
+              </button>
+              <button
+                type="button"
+                onClick={handleVoucherSubmit}
+                disabled={voucherCode.length < 8 || isVerifyingVoucher}
+                className="flex flex-1 items-center justify-center rounded-full bg-blue-600 py-3.5 font-bold text-white shadow-md transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {isVerifyingVoucher ? (
+                  <svg className="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                ) : "GUNAKAN"}
+              </button>
+            </div>
+            
+            {showVoucherKeyboard && (
+              <div className="mt-6">
+                <Keyboard
+                  keyboardRef={(r: any) => (keyboardRef.current = r)}
+                  layout={{
+                    default: [
+                      "1 2 3 4 5 6 7 8 9 0",
+                      "Q W E R T Y U I O P",
+                      "A S D F G H J K L",
+                      "Z X C V B N M {bksp}",
+                    ],
+                  }}
+                  display={{ "{bksp}": "⌫" }}
+                  onChange={onVoucherKeyboardChange}
+                  theme={"hg-theme-default custom-keyboard"}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* QRIS Modal for Extra Print */}
       {isQrisModalOpen && (
