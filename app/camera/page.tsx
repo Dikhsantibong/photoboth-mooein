@@ -297,9 +297,9 @@ function CameraContent() {
 
           setCameraReady(true);
 
-          // Initialize MediaRecorder ONLY if flipbook to save resources
+          // Initialize MediaRecorder for all canvas types to capture live photos
 
-          if (streamRef.current && canvasType === "flipbook") {
+          if (streamRef.current) {
 
             try {
 
@@ -328,8 +328,7 @@ function CameraContent() {
               };
 
               recorderRef.current.onstop = () => {
-
-                const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+                const blob = new Blob(chunksRef.current, { type: recorderRef.current?.mimeType || 'video/webm' });
 
                 setVideos(prev => {
 
@@ -343,39 +342,7 @@ function CameraContent() {
 
                 chunksRef.current = [];
 
-                // Pre-warm the encoder for the NEXT frame to prevent freezing
-
-                if (recorderRef.current && recorderRef.current.state === "inactive") {
-
-                  try {
-
-                    recorderRef.current.start();
-
-                    recorderRef.current.pause();
-
-                  } catch (e) {
-
-                    console.error("Failed to pre-warm next frame", e);
-
-                  }
-
-                }
-
               };
-
-              // Pre-warm the FIRST frame
-
-              try {
-
-                recorderRef.current.start();
-
-                recorderRef.current.pause();
-
-              } catch (e) {
-
-                console.error("Failed to pre-warm first frame", e);
-
-              }
 
             } catch (e) {
 
@@ -485,33 +452,23 @@ function CameraContent() {
 
     }
 
-    // Stop recording when photo is captured
-
-    if (recorderRef.current && (recorderRef.current.state === "recording" || recorderRef.current.state === "paused")) {
-
-      recorderRef.current.stop();
-
-    }
-
-
-
     const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
-
     setPhotos((prev) => {
-
       const u = [...prev];
-
       u[currentFrame] = dataUrl;
-
       return u;
-
     });
-
+    
     setFlashActive(true);
-
     setTimeout(() => setFlashActive(false), 150);
 
-    setShowPreview(true);
+    // Continue recording for 3 more seconds to capture the reaction
+    setTimeout(() => {
+      if (recorderRef.current && (recorderRef.current.state === "recording" || recorderRef.current.state === "paused")) {
+        recorderRef.current.stop();
+      }
+      setShowPreview(true);
+    }, 3000);
 
   };
 
@@ -641,19 +598,19 @@ function CameraContent() {
 
     if (countdown === 3) {
 
-      // Resume recording at the beginning of countdown to prevent freezing
+      // Start recording fresh at the beginning of countdown
 
-      if (recorderRef.current) {
+      if (recorderRef.current && recorderRef.current.state === "inactive") {
 
-        if (recorderRef.current.state === "paused") {
+        chunksRef.current = [];
 
-          recorderRef.current.resume();
-
-        } else if (recorderRef.current.state === "inactive") {
-
-          chunksRef.current = [];
+        try {
 
           recorderRef.current.start();
+
+        } catch (e) {
+
+          console.error("Failed to start recording", e);
 
         }
 
@@ -856,7 +813,7 @@ function CameraContent() {
                       </button>
 
                       <button
-                        onClick={() => { if (cameraReady && countdown === null) setCountdown(3); }}
+                        onClick={() => { if (cameraReady && countdown === null && recorderRef.current?.state !== "recording") setCountdown(3); }}
                         className="w-20 h-20 rounded-full bg-white/90 backdrop-blur-md border-[6px] border-black flex items-center justify-center text-black shadow-2xl hover:scale-110 active:scale-95 transition-all group"
                       >
                         <div className="w-14 h-14 bg-black rounded-full flex items-center justify-center text-white transition-colors group-hover:bg-gray-800">

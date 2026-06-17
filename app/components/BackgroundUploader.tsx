@@ -111,7 +111,7 @@ export default function BackgroundUploader() {
               }
             }
 
-            await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/save-failed-task`, {
+            await fetch(`/api/save-failed-task`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(backupPayload)
@@ -201,7 +201,7 @@ export default function BackgroundUploader() {
         try {
           const convertForm = new FormData();
           convertForm.append("video", task.videoBlob, "input.webm");
-          const convertRes = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/convert-video`, {
+          const convertRes = await fetch(`/api/convert-video`, {
             method: "POST",
             body: convertForm,
           });

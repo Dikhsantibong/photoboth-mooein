@@ -564,7 +564,7 @@ function FlipbookPrintContent() {
               try {
                 const convertForm = new FormData();
                 convertForm.append("video", videoBlob, "input.webm");
-                const convertRes = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/convert-video`, {
+                const convertRes = await fetch(`/api/convert-video`, {
                   method: "POST",
                   body: convertForm,
                 });
@@ -662,7 +662,7 @@ function FlipbookPrintContent() {
     setTimeLeft(300);
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/generate-qris`, {
+      const response = await fetch(`/api/generate-qris`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -715,7 +715,7 @@ function FlipbookPrintContent() {
 
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/check-status?order_id=${encodeURIComponent(qrisData.order_id)}&server_key=${encodeURIComponent(pricing.server_key!)}&is_production=${pricing.is_production === true ? "1" : "0"}`,
+        const response = await fetch(`/api/check-status?order_id=${encodeURIComponent(qrisData.order_id)}&server_key=${encodeURIComponent(pricing.server_key!)}&is_production=${pricing.is_production === true ? "1" : "0"}`,
         );
         const result = await response.json();
 
@@ -725,7 +725,7 @@ function FlipbookPrintContent() {
 
           // Create transaction record
           const extraPrice = pendingPrintAmount;
-          await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/transactions`, {
+          await fetch(`/api/transactions`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -798,7 +798,7 @@ function FlipbookPrintContent() {
 
         const orientation = localStorage.getItem("printerOrientation") || "landscape";
 
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/final-images/${dbId || 0}/print`, {
+        const response = await fetch(`/api/final-images/${dbId || 0}/print`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

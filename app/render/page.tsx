@@ -520,6 +520,13 @@ function RenderContent() {
         }
         // Hindari VP9 untuk mencegah beban berat pada CPU mesin lama
 
+        // Initial draw to prevent empty stream bug in Chromium
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, dim.w, dim.h);
+        if (baseImg.src) {
+          ctx.drawImage(baseImg, 0, 0);
+        }
+        
         const stream = finalCanvas.captureStream(30);
         const recorder = new MediaRecorder(stream, options);
         const chunks: BlobPart[] = [];

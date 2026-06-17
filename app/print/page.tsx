@@ -277,7 +277,7 @@ function PrintContent() {
         }
       }
 
-      await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/save-failed-task`, {
+      await fetch(`/api/save-failed-task`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -337,14 +337,14 @@ function PrintContent() {
 
         // ── Tambahkan Video Live (converted to MP4 for iOS/Android compatibility) ──
         const finalVideoBlob = await localforage.getItem<Blob>("finalLiveVideo");
-        if (finalVideoBlob) {
+        if (finalVideoBlob && finalVideoBlob.size > 0) {
           let videoToUpload: Blob = finalVideoBlob;
           
           if (finalVideoBlob.type.includes("webm") || !finalVideoBlob.type.includes("mp4")) {
             try {
               const convertForm = new FormData();
               convertForm.append("video", finalVideoBlob, "input.webm");
-              const convertRes = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/convert-video`, {
+              const convertRes = await fetch(`/api/convert-video`, {
                 method: "POST",
                 body: convertForm,
                 signal: abortController.signal
@@ -497,7 +497,7 @@ function PrintContent() {
       const finalPrice = isExtra ? Math.round(Number(rawPrintPrice)) : 0;
       const targetQty = customQty || printCopies;
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/final-images/${dbId || 0}/print`, {
+      const response = await fetch(`/api/final-images/${dbId || 0}/print`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -594,7 +594,7 @@ function PrintContent() {
     setTimeLeft(180); // 3 minutes is enough for extra print
     
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/generate-qris`, {
+      const response = await fetch(`/api/generate-qris`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -620,7 +620,7 @@ function PrintContent() {
     if (qrisState !== "ready" || !isQrisModalOpen) return;
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/check-status?order_id=${qrisData?.order_id}&server_key=${pricing?.server_key}&is_production=${pricing?.is_production ? "1" : "0"}`);
+        const response = await fetch(`/api/check-status?order_id=${qrisData?.order_id}&server_key=${pricing?.server_key}&is_production=${pricing?.is_production ? "1" : "0"}`);
         const result = await response.json();
         if (result.success && result.data?.status === "paid") {
           setQrisState("success");
@@ -821,15 +821,15 @@ function PrintContent() {
                 UNDUH & CETAK
               </h2>
 
-          <div className="flex-1 min-h-0 bg-white rounded-[20px] shadow-2xl flex flex-col items-center p-4 overflow-y-auto border-3 border-white">
+          <div className="flex-1 min-h-0 bg-white rounded-[20px] shadow-2xl flex flex-row flex-wrap items-center justify-center p-2 sm:p-4 overflow-y-auto border-3 border-white gap-2 sm:gap-4">
              
-             <div className="shrink-0 flex flex-col items-center text-center w-full max-w-[300px] mx-auto">
+             <div className="shrink-0 flex flex-col items-center justify-center text-center flex-1 min-w-[200px] max-w-[280px]">
                  <h3 className={`${poppins.className} text-slate-900 text-sm uppercase leading-relaxed mb-1 font-bold`}>SCAN QR CODE</h3>
-                 <h3 className={`${poppins.className} text-black text-[10px] uppercase mb-4 tracking-tighter font-bold`}>DOWNLOAD SOFTFILE</h3>
+                 <h3 className={`${poppins.className} text-black text-[10px] uppercase mb-2 tracking-tighter font-bold`}>DOWNLOAD SOFTFILE</h3>
 
-                 <div className="p-5 bg-black rounded-[2rem] shadow-xl relative group mx-auto">
-                    <div className="bg-white p-4 rounded-[1.2rem] shadow-inner flex items-center justify-center">
-                       <QRCode value={downloadUrl} size={200} level="H" />
+                 <div className="p-3 sm:p-4 bg-black rounded-[2rem] shadow-xl relative group mx-auto">
+                    <div className="bg-white p-3 sm:p-4 rounded-[1.2rem] shadow-inner flex items-center justify-center">
+                       <QRCode value={downloadUrl} size={150} level="H" />
                     </div>
                 {uploadStage !== "success" && (
                    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm rounded-[3rem] flex items-center justify-center flex-col p-6">
@@ -861,30 +861,30 @@ function PrintContent() {
 
              </div>
 
-             <div className="flex-1 flex flex-col items-center justify-center border-t-4 border-slate-50 pt-4 mt-4 gap-3 w-full max-w-[300px] mx-auto min-h-0">
+             <div className="shrink-0 flex flex-col items-center justify-center flex-1 min-w-[200px] max-w-[280px] gap-2">
                 {/* Print Quantity Selector */}
-                <div className="flex flex-col items-center mb-2 w-full">
-                  <p className={`${poppins.className} text-[10px] text-slate-400 mb-3 uppercase tracking-widest font-bold`}>JUMLAH CETAK</p>
-                  <div className="flex items-center gap-6">
+                <div className="flex flex-col items-center mb-1 w-full">
+                  <p className={`${poppins.className} text-[10px] text-slate-400 mb-2 uppercase tracking-widest font-bold`}>JUMLAH CETAK</p>
+                  <div className="flex items-center gap-4">
                     <button 
                       onClick={() => setPrintCopies(Math.max(1, printCopies - 1))}
                       disabled={isPrinting}
-                      className="w-12 h-12 rounded-2xl bg-slate-50 border-2 border-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                      className="w-10 h-10 rounded-2xl bg-slate-50 border-2 border-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors disabled:opacity-50"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /></svg>
                     </button>
                     <span className={`${poppins.className} text-3xl text-slate-800 tabular-nums font-black`}>{printCopies}</span>
                     <button 
                       onClick={() => setPrintCopies(Math.min(10, printCopies + 1))}
                       disabled={isPrinting}
-                      className="w-12 h-12 rounded-lg bg-black/10 border-2 border-black/20 flex items-center justify-center text-black hover:bg-black/20 transition-colors disabled:opacity-50"
+                      className="w-10 h-10 rounded-lg bg-black/10 border-2 border-black/20 flex items-center justify-center text-black hover:bg-black/20 transition-colors disabled:opacity-50"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                     </button>
                   </div>
                   
                   {/* Total Price Display */}
-                  <div className="mt-4 px-6 py-2 rounded-full bg-slate-50 border border-slate-100 flex items-center gap-2">
+                  <div className="mt-3 px-4 py-2 rounded-full bg-slate-50 border border-slate-100 flex items-center gap-2">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">ESTIMASI BIAYA:</span>
                     <span className="text-sm font-black text-black">
                       {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(
@@ -894,7 +894,7 @@ function PrintContent() {
                   </div>
                 </div>
 
-                <div className="flex w-full justify-center">
+                <div className="flex w-full justify-center mt-1">
                   <button 
                     onClick={() => {
                       const cat = templateCategory.toUpperCase();
@@ -911,7 +911,7 @@ function PrintContent() {
                       handleMainPrintAction(printSize);
                     }}
                     disabled={isPrinting}
-                    className={`flex-1 py-5 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-xl transition-all ${isPrinting ? 'bg-slate-100 text-slate-400' : 'bg-black text-white hover:scale-[1.03] active:scale-95'}`}
+                    className={`flex-1 py-4 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-xl transition-all ${isPrinting ? 'bg-slate-100 text-slate-400' : 'bg-black text-white hover:scale-[1.03] active:scale-95'}`}
                   >
                     {isPrinting ? "..." : hasPrinted ? "TAMBAH CETAK" : "CETAK SEKARANG"}
                   </button>

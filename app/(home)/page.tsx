@@ -37,7 +37,7 @@ export default function Home() {
   const handleMulaiFoto = () => {
     router.push("/tutorial");
 
-    fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/payment-gateway`)
+    fetch(`/api/payment-gateway`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {

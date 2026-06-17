@@ -73,9 +73,9 @@ export async function POST(request: Request) {
       try {
         // Video bisa dikirim sebagai data URL atau raw base64
         let videoBuffer: Buffer;
-        if (body.videoBase64.startsWith('data:')) {
-          const matches = body.videoBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-          videoBuffer = Buffer.from(matches![2], 'base64');
+        if (body.videoBase64.includes('base64,')) {
+          const parts = body.videoBase64.split('base64,');
+          videoBuffer = Buffer.from(parts[1], 'base64');
         } else {
           videoBuffer = Buffer.from(body.videoBase64, 'base64');
         }

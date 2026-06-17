@@ -70,7 +70,13 @@ async function printImageLocal(imagePath: string, printerName: string, orientati
     try {
         const { stdout, stderr } = await execAsync(`powershell -ExecutionPolicy Bypass -File "${tempPs1}"`);
         if (stderr && stderr.trim().length > 0) {
-            throw new Error(stderr.trim());
+            let errMsg = stderr.trim();
+            if (errMsg.includes("No printers are installed")) {
+                errMsg = "Tidak ada printer yang terinstal/terhubung di komputer ini.";
+            } else if (errMsg.includes("InvalidPrinterException")) {
+                errMsg = "Printer tidak valid atau tidak ditemukan.";
+            }
+            throw new Error(errMsg);
         }
     } finally {
         try { fs.unlinkSync(tempPs1); } catch (e) {}

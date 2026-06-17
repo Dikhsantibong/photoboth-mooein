@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 
 export async function POST(request: Request) {
   try {
@@ -28,7 +28,7 @@ async function handleMidtrans(amount: number, canvas_type: string, server_key: s
     ? 'https://app.midtrans.com/snap/v1/transactions' 
     : 'https://app.sandbox.midtrans.com/snap/v1/transactions';
 
-  const orderId = `ROAM-${Date.now()}`;
+  const orderId = `MOOEIN-${Date.now()}`;
 
   const response = await fetch(midtransUrl, {
     method: 'POST',
@@ -86,7 +86,7 @@ async function handleDoku(amount: number, server_key: string, client_key: string
   
   const body = {
     order: {
-      invoice_number: `INV-${Date.now()}`,
+      invoice_number: `MOOEIN-${Date.now()}`,
       amount: amount
     }
   };

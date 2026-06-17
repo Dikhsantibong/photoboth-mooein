@@ -253,8 +253,8 @@ function PembayaranContent() {
   // ── Helper: Create Transaction on Backend ──
   const createTransaction = async (paymentType: "qris" | "voucher", voucherId?: number | null): Promise<number | null> => {
     try {
-      const txId = `POTOPI-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/transactions`, {
+      const txId = `MOOEIN-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const response = await fetch(`/api/transactions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -293,7 +293,7 @@ function PembayaranContent() {
       if (!pricingData || !pricingData.server_key) return;
 
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/generate-qris`, {
+        const response = await fetch(`/api/generate-qris`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -340,7 +340,7 @@ function PembayaranContent() {
 
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/check-status?order_id=${encodeURIComponent(qrisData.order_id)}&server_key=${encodeURIComponent(pricingData.server_key!)}&is_production=${pricingData.is_production === true ? "1" : "0"}`,
+        const response = await fetch(`/api/check-status?order_id=${encodeURIComponent(qrisData.order_id)}&server_key=${encodeURIComponent(pricingData.server_key!)}&is_production=${pricingData.is_production === true ? "1" : "0"}`,
         );
         const result = await response.json();
 
@@ -423,8 +423,8 @@ function PembayaranContent() {
   const fetchAndStoreTemplates = async () => {
     try {
       const [resTemplates, resStickers] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/templates?type=${canvasType}`),
-        fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/stickers`)
+        fetch(`/api/templates?type=${canvasType}`),
+        fetch(`/api/stickers`)
       ]);
       
       const resultTemplates = await resTemplates.json();
@@ -448,7 +448,7 @@ function PembayaranContent() {
     setVoucherError(null);
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/vouchers`, {
+      const response = await fetch(`/api/vouchers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: voucherCode, type: canvasType })
