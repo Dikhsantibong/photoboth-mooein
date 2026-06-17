@@ -305,15 +305,7 @@ function CameraContent() {
 
               let options: any = { mimeType: 'video/webm' };
 
-              if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
-
-                options = { mimeType: 'video/mp4; codecs="avc1.42E01E"' };
-
-              } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
-
-                options = { mimeType: 'video/webm; codecs=h264' };
-
-              } else if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
+              if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
 
                 options = { mimeType: 'video/webm; codecs=vp8' };
 
@@ -597,25 +589,15 @@ function CameraContent() {
     if (countdown === null) return;
 
     if (countdown === 3) {
-
       // Start recording fresh at the beginning of countdown
-
       if (recorderRef.current && recorderRef.current.state === "inactive") {
-
         chunksRef.current = [];
-
         try {
-
-          recorderRef.current.start();
-
+          recorderRef.current.start(100);
         } catch (e) {
-
           console.error("Failed to start recording", e);
-
         }
-
       }
-
     }
 
     if (countdown === 0) { capturePhoto(); setCountdown(null); return; }

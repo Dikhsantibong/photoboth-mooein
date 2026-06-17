@@ -513,12 +513,9 @@ function RenderContent() {
 
       if (videoElements.some(v => v.src)) {
         let options: any = { mimeType: 'video/webm' };
-        if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
-          options = { mimeType: 'video/mp4; codecs="avc1.42E01E"' };
-        } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
-          options = { mimeType: 'video/webm; codecs=h264' };
+        if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
+          options = { mimeType: 'video/webm; codecs=vp8' };
         }
-        // Hindari VP9 untuk mencegah beban berat pada CPU mesin lama
 
         // Initial draw to prevent empty stream bug in Chromium
         ctx.fillStyle = "#ffffff";
@@ -543,7 +540,7 @@ function RenderContent() {
           finishStaticImage();
         };
 
-        recorder.start();
+        recorder.start(100);
         videoElements.forEach(v => {
           if (v.src) {
             v.currentTime = 0;
