@@ -125,7 +125,14 @@ function RenderContent() {
                 sh = img.width / frameRatio;
                 sy = (img.height - sh) / 2;
               }
-              ctx.drawImage(img, sx, sy, sw, sh, x, y, fw, fh);
+              
+              ctx.save();
+              ctx.translate(x + fw / 2, y + fh / 2);
+              if (frames[i].angle) {
+                ctx.rotate((frames[i].angle * Math.PI) / 180);
+              }
+              ctx.drawImage(img, sx, sy, sw, sh, -fw / 2, -fh / 2, fw, fh);
+              ctx.restore();
               resolve();
             };
             img.src = photos[i];
@@ -432,6 +439,19 @@ function RenderContent() {
 
       const videoElements: HTMLVideoElement[] = [];
 
+      // Load captured photos for GIF generation
+      const storedPhotosJSON = localStorage.getItem("capturedPhotos") || localStorage.getItem("rawPhotos");
+      const photosArray: string[] = storedPhotosJSON ? JSON.parse(storedPhotosJSON) : [];
+      const photoElements: HTMLImageElement[] = [];
+      for (const p of photosArray) {
+        if (p) {
+          const img = new Image();
+          img.src = p;
+          await new Promise<void>(res => { img.onload = () => res(); img.onerror = () => res(); });
+          photoElements.push(img);
+        }
+      }
+
       if (liveVideos && liveVideos.length > 0) {
         for (const blob of liveVideos) {
           if (blob) {
@@ -511,6 +531,72 @@ function RenderContent() {
         router.push(`/print?kanvas=${canvasType}&template=${templateId}`);
       };
 
+      const generateGifVideo = () => {
+        if (photoElements.length === 0) {
+          finishStaticImage();
+          return;
+        }
+
+        let options: any = { mimeType: 'video/webm' };
+        if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
+          options = { mimeType: 'video/webm; codecs=vp8' };
+        }
+
+        const gifCanvas = document.createElement('canvas');
+        gifCanvas.width = photoElements[0].width || dim.w;
+        gifCanvas.height = photoElements[0].height || dim.h;
+        const gifCtx = gifCanvas.getContext('2d');
+        if (!gifCtx) {
+          finishStaticImage();
+          return;
+        }
+
+        const stream = gifCanvas.captureStream(30);
+        const recorder = new MediaRecorder(stream, options);
+        const chunks: BlobPart[] = [];
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) chunks.push(e.data);
+        };
+
+        recorder.onstop = async () => {
+          const finalBlob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+          await localforage.setItem("finalGifVideo", finalBlob);
+          finishStaticImage();
+        };
+
+        recorder.start(100);
+
+        const startTime = Date.now();
+        const duration = 6000; // 6 seconds
+        const frameDuration = 500; // change photo every 500ms
+
+        const renderGifLoop = () => {
+          const elapsed = Date.now() - startTime;
+          setLoadingProgress(Math.min(99, Math.round((elapsed / duration) * 100)));
+
+          if (elapsed > duration) {
+            setLoadingProgress(100);
+            recorder.stop();
+            return;
+          }
+
+          const currentPhotoIndex = Math.floor(elapsed / frameDuration) % photoElements.length;
+          const currentPhoto = photoElements[currentPhotoIndex];
+
+          gifCtx.fillStyle = "#ffffff";
+          gifCtx.fillRect(0, 0, gifCanvas.width, gifCanvas.height);
+          
+          if (currentPhoto) {
+            // Draw photo covering the canvas
+            gifCtx.drawImage(currentPhoto, 0, 0, gifCanvas.width, gifCanvas.height);
+          }
+
+          animationFrameRef.current = requestAnimationFrame(renderGifLoop);
+        };
+        renderGifLoop();
+      };
+
       if (videoElements.some(v => v.src)) {
         let options: any = { mimeType: 'video/webm' };
         if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
@@ -537,7 +623,7 @@ function RenderContent() {
           await localforage.setItem("finalLiveVideo", 
             finalBlob);
           videoElements.forEach(v => v.src && URL.revokeObjectURL(v.src));
-          finishStaticImage();
+          generateGifVideo();
         };
 
         recorder.start(100);
@@ -598,9 +684,12 @@ function RenderContent() {
               try {
                 // Flip video horizontally agar sesuai dengan foto yang sudah di-mirror
                 ctx.save();
-                ctx.translate(x + fw, y);
+                ctx.translate(x + fw / 2, y + fh / 2);
+                if (fr.angle) {
+                  ctx.rotate((fr.angle * Math.PI) / 180);
+                }
                 ctx.scale(-1, 1);
-                ctx.drawImage(vid, sx, sy, sw, sh, 0, 0, fw, fh);
+                ctx.drawImage(vid, sx, sy, sw, sh, -fw / 2, -fh / 2, fw, fh);
                 ctx.restore();
               } catch (e) { }
             }
@@ -632,7 +721,7 @@ function RenderContent() {
         };
         renderLoop();
       } else {
-        finishStaticImage();
+        generateGifVideo();
       }
     } catch (err) {
       console.error(err);

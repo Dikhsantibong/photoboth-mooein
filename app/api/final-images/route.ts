@@ -18,11 +18,11 @@ export async function POST(request: Request) {
     for (const [key, value] of incomingFormData.entries()) {
       if (typeof value === 'object' && value !== null && 'name' in value) {
         const file = value as any;
-        const fileName = file.name || (key === 'video' ? 'final.mp4' : 'file.bin');
+        const fileName = file.name || (key === 'video' || key === 'gif_video' ? 'final.mp4' : 'file.bin');
         
         // Ensure correct content type for video files
         let contentType = file.type;
-        if (key === 'video' && (!contentType || contentType === 'application/octet-stream')) {
+        if ((key === 'video' || key === 'gif_video') && (!contentType || contentType === 'application/octet-stream')) {
           if (fileName.endsWith('.mp4')) contentType = 'video/mp4';
           else if (fileName.endsWith('.webm')) contentType = 'video/webm';
           else if (fileName.endsWith('.mov')) contentType = 'video/quicktime';
@@ -61,8 +61,8 @@ export async function POST(request: Request) {
     
     return NextResponse.json(data, { status: response.status });
 
-  } catch (error) {
-    console.error('Final Image Upload Error:', error);
-    return NextResponse.json({ success: false, message: 'Internal Server Error' }, { status: 500 });
+  } catch (error: any) {
+    console.error('Final Image Upload Error:', error?.message || error, error?.stack || '');
+    return NextResponse.json({ success: false, message: 'Internal Server Error', detail: error?.message || String(error) }, { status: 500 });
   }
 }

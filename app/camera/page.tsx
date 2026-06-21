@@ -444,6 +444,10 @@ function CameraContent() {
 
     }
 
+    if (recorderRef.current && (recorderRef.current.state === "recording" || recorderRef.current.state === "paused")) {
+      recorderRef.current.stop();
+    }
+    
     const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
     setPhotos((prev) => {
       const u = [...prev];
@@ -454,13 +458,7 @@ function CameraContent() {
     setFlashActive(true);
     setTimeout(() => setFlashActive(false), 150);
 
-    // Continue recording for 3 more seconds to capture the reaction
-    setTimeout(() => {
-      if (recorderRef.current && (recorderRef.current.state === "recording" || recorderRef.current.state === "paused")) {
-        recorderRef.current.stop();
-      }
-      setShowPreview(true);
-    }, 3000);
+    setShowPreview(true);
 
   };
 
@@ -726,6 +724,8 @@ function CameraContent() {
                               top: `${(frame.y / template.image_height) * 100}%`,
                               width: `${(frame.width / template.image_width) * 100}%`,
                               height: `${(frame.height / template.image_height) * 100}%`,
+                              transform: `rotate(${frame.angle || 0}deg)`,
+                              transformOrigin: 'center center',
                               outline: isCurrent ? "4px solid black" : "none",
                               outlineOffset: "-4px",
                               zIndex: isCurrent ? 5 : 1,

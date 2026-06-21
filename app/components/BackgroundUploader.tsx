@@ -111,6 +111,23 @@ export default function BackgroundUploader() {
               }
             }
 
+            // Sertakan GIF video jika ada (konversi blob ke base64)
+            if (task.gifBlob && task.gifBlob instanceof Blob) {
+              try {
+                const arrayBuffer = await task.gifBlob.arrayBuffer();
+                const uint8 = new Uint8Array(arrayBuffer);
+                let binary = '';
+                for (let i = 0; i < uint8.length; i++) {
+                  binary += String.fromCharCode(uint8[i]);
+                }
+                const b64 = btoa(binary);
+                const mimeType = task.gifBlob.type || 'video/webm';
+                backupPayload.gifBase64 = `data:${mimeType};base64,${b64}`;
+              } catch (gifErr) {
+                console.warn('[BackgroundUploader] Gagal konversi GIF untuk backup lokal:', gifErr);
+              }
+            }
+
             await fetch(`/api/save-failed-task`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -216,6 +233,31 @@ export default function BackgroundUploader() {
         }
       }
       formData.append("video", videoToUpload, "final.mp4");
+    }
+
+    // GIF Video
+    if (task.gifBlob) {
+      let gifToUpload: Blob = task.gifBlob;
+      
+      if (task.gifBlob.type?.includes("webm") || !task.gifBlob.type?.includes("mp4")) {
+        try {
+          const convertForm = new FormData();
+          convertForm.append("video", task.gifBlob, "input.webm");
+          const convertRes = await fetch(`/api/convert-video`, {
+            method: "POST",
+            body: convertForm,
+          });
+          if (convertRes.ok && convertRes.headers.get("X-Conversion-Success") === "true") {
+            const mp4ArrayBuffer = await convertRes.arrayBuffer();
+            gifToUpload = new Blob([mp4ArrayBuffer], { type: "video/mp4" });
+          } else {
+            gifToUpload = new Blob([task.gifBlob], { type: "video/mp4" });
+          }
+        } catch (convErr) {
+          gifToUpload = new Blob([task.gifBlob], { type: "video/mp4" });
+        }
+      }
+      formData.append("gif_video", gifToUpload, "gif.mp4");
     }
 
     return new Promise<"success" | "network_error" | "server_error">((resolve) => {

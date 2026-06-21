@@ -237,6 +237,8 @@ function PrintContent() {
         setFinalVideoUrl(URL.createObjectURL(videoBlob));
       }
 
+      const gifBlob = await localforage.getItem<Blob>("finalGifVideo");
+
       const raw = localStorage.getItem("capturedPhotos") || localStorage.getItem("rawPhotos");
       if (raw) setRawPhotos(JSON.parse(raw));
 
@@ -263,6 +265,8 @@ function PrintContent() {
 
       const capturedPhotosRaw = localStorage.getItem("capturedPhotos");
       const rawPhotosRaw = localStorage.getItem("rawPhotos");
+      const videoBlob = await localforage.getItem<Blob>("finalLiveVideo");
+      const gifBlob = await localforage.getItem<Blob>("finalGifVideo");
 
       const payload: any = {
         transaction_id: storedTx,
@@ -270,10 +274,11 @@ function PrintContent() {
         finalImageBase64: storedFinal,
         rawPhotos: JSON.parse(rawPhotosRaw || "[]"),
         capturedPhotos: JSON.parse(capturedPhotosRaw || "[]"),
+        videoBlob: videoBlob,
+        gifBlob: gifBlob
       };
 
       // Convert video blob to base64 for the API
-      const videoBlob = await localforage.getItem<Blob>("finalLiveVideo");
       if (videoBlob) {
         try {
           const arrayBuffer = await videoBlob.arrayBuffer();
@@ -352,15 +357,12 @@ function PrintContent() {
         const finalVideoBlob = await localforage.getItem<Blob>("finalLiveVideo");
         if (finalVideoBlob && finalVideoBlob.size > 0) {
           let videoToUpload: Blob = finalVideoBlob;
-          
           if (finalVideoBlob.type.includes("webm") || !finalVideoBlob.type.includes("mp4")) {
             try {
               const convertForm = new FormData();
               convertForm.append("video", finalVideoBlob, "input.webm");
               const convertRes = await fetch(`/api/convert-video`, {
-                method: "POST",
-                body: convertForm,
-                signal: abortController.signal
+                method: "POST", body: convertForm, signal: abortController.signal
               });
               if (convertRes.ok && convertRes.headers.get("X-Conversion-Success") === "true") {
                 const mp4ArrayBuffer = await convertRes.arrayBuffer();
@@ -372,8 +374,30 @@ function PrintContent() {
               videoToUpload = new Blob([finalVideoBlob], { type: "video/mp4" });
             }
           }
-          
           formData.append("video", videoToUpload, "final.mp4");
+        }
+
+        const finalGifBlob = await localforage.getItem<Blob>("finalGifVideo");
+        if (finalGifBlob && finalGifBlob.size > 0) {
+          let gifToUpload: Blob = finalGifBlob;
+          if (finalGifBlob.type.includes("webm") || !finalGifBlob.type.includes("mp4")) {
+            try {
+              const convertForm = new FormData();
+              convertForm.append("video", finalGifBlob, "input.webm");
+              const convertRes = await fetch(`/api/convert-video`, {
+                method: "POST", body: convertForm, signal: abortController.signal
+              });
+              if (convertRes.ok && convertRes.headers.get("X-Conversion-Success") === "true") {
+                const mp4ArrayBuffer = await convertRes.arrayBuffer();
+                gifToUpload = new Blob([mp4ArrayBuffer], { type: "video/mp4" });
+              } else {
+                gifToUpload = new Blob([finalGifBlob], { type: "video/mp4" });
+              }
+            } catch (convErr) {
+              gifToUpload = new Blob([finalGifBlob], { type: "video/mp4" });
+            }
+          }
+          formData.append("gif_video", gifToUpload, "final.mp4");
         }
 
         if (abortController.signal.aborted) throw new Error("Aborted before XHR");
@@ -445,6 +469,7 @@ function PrintContent() {
       }).filter((p: any) => p.imageBase64 && p.frame_id);
 
       const finalVideoBlob = await localforage.getItem<Blob>("finalLiveVideo");
+      const finalGifBlob = await localforage.getItem<Blob>("finalGifVideo");
 
       const queueId = "offline_upload_" + Date.now() + "_" + Math.floor(Math.random()*1000);
       const queueData = {
@@ -455,6 +480,7 @@ function PrintContent() {
         finalImageBase64: storedFinalImage,
         photos: payloadPhotos,
         videoBlob: finalVideoBlob || null,
+        gifBlob: finalGifBlob || null,
         timestamp: Date.now()
       };
 
@@ -740,6 +766,8 @@ function PrintContent() {
             sessionKeys.forEach(key => localStorage.removeItem(key));
             localforage.removeItem("liveVideos");
             localforage.removeItem("finalLiveVideo");
+            localforage.removeItem("finalGifVideo");
+            localStorage.removeItem("finalRenderImage");
             router.push("/");
             return 0;
           }
@@ -787,6 +815,7 @@ function PrintContent() {
     // Juga bersihkan localforage (video)
     localforage.removeItem("liveVideos");
     localforage.removeItem("finalLiveVideo");
+    localforage.removeItem("finalGifVideo");
 
     router.push("/");
   };
