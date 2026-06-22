@@ -104,11 +104,15 @@ app.whenReady().then(async () => {
   // Load environment variables before starting Next.js
   loadEnv();
 
+  // Expose userData path to Next.js API Routes for persistent file storage
+  process.env.USER_DATA_PATH = app.getPath('userData');
+
   if (!dev) {
     try {
       // Expose the true application root directory to Next.js API Routes 
       // so it can accurately find node_modules and tmp inside 'resources/app'
       process.env.ELECTRON_APP_ROOT = __dirname;
+      process.env.USER_DATA_PATH = app.getPath('userData');
 
       // Di mode produksi, kita start server Next.js secara internal
       nextApp = next({ dev: false, dir: __dirname, hostname, port });

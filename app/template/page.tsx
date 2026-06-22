@@ -126,10 +126,13 @@ function TemplateContent() {
 
   const getImageUrl = (path: string) => {
     if (!path) return undefined;
-    if (path.startsWith("http")) return path;
-    const cleanBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-    const cleanPath = path.startsWith("/") ? path.slice(1) : path;
-    return `${cleanBaseUrl}/storage/${cleanPath}`;
+    let url = path;
+    if (!path.startsWith("http")) {
+      const cleanBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+      const cleanPath = path.startsWith("/") ? path.slice(1) : path;
+      url = `${cleanBaseUrl}/storage/${cleanPath}`;
+    }
+    return `/api/cache-image?url=${encodeURIComponent(url)}`;
   };
 
   return (

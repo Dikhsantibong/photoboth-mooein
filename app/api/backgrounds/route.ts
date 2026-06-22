@@ -2,10 +2,17 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 
-const bgDir = path.join(process.cwd(), 'public', 'backgrounds');
+const getBgDir = () => {
+  const userData = process.env.USER_DATA_PATH;
+  if (userData) {
+    return path.join(userData, 'backgrounds');
+  }
+  return path.join(process.cwd(), 'public', 'backgrounds');
+};
 
 export async function GET() {
   try {
+    const bgDir = getBgDir();
     if (!fs.existsSync(bgDir)) {
       fs.mkdirSync(bgDir, { recursive: true });
     }
@@ -25,6 +32,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const bgDir = getBgDir();
     if (!fs.existsSync(bgDir)) {
       fs.mkdirSync(bgDir, { recursive: true });
     }
@@ -60,6 +68,7 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    const bgDir = getBgDir();
     const { searchParams } = new URL(req.url);
     const filename = searchParams.get('file');
     

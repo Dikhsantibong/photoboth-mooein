@@ -31,6 +31,7 @@ export default function SettingsPage() {
   const [printerName, setPrinterName] = useState<string>("");
   const [printerSplitName, setPrinterSplitName] = useState<string>("");
   const [printerOrientation, setPrinterOrientation] = useState<string>("landscape");
+  const [nativeDslrCapture, setNativeDslrCapture] = useState<boolean>(false);
   const [welcomeBgImage, setWelcomeBgImage] = useState<string>("");
   const [enabledCanvas, setEnabledCanvas] = useState<Record<string, boolean>>({
     koran: true,
@@ -150,6 +151,9 @@ export default function SettingsPage() {
       const savedOrientation = localStorage.getItem("printerOrientation");
       if (savedOrientation) setPrinterOrientation(savedOrientation);
 
+      const savedNativeDslr = localStorage.getItem("nativeDslrCapture");
+      if (savedNativeDslr) setNativeDslrCapture(savedNativeDslr === "true");
+
       const savedBg = localStorage.getItem("welcomeBgImage");
       if (savedBg) setWelcomeBgImage(savedBg);
 
@@ -239,6 +243,7 @@ export default function SettingsPage() {
     localStorage.setItem("preferredPrinterName", printerName);
     localStorage.setItem("preferredPrinterSplitName", printerSplitName);
     localStorage.setItem("printerOrientation", printerOrientation);
+    localStorage.setItem("nativeDslrCapture", nativeDslrCapture ? "true" : "false");
     localStorage.setItem("welcomeBgImage", welcomeBgImage);
     localStorage.setItem("enabledCanvas", JSON.stringify(enabledCanvas));
     localStorage.setItem("sessionTimeout", sessionTimeout.toString());
@@ -500,6 +505,27 @@ export default function SettingsPage() {
                            <option value="">Default (Auto)</option>
                            {cameras.map((cam) => (<option key={cam.deviceId} value={cam.deviceId}>{cam.label || `Kamera ${cam.deviceId.slice(0, 5)}`}</option>))}
                          </select>
+                       </div>
+                     </div>
+                   </div>
+
+                   {/* Native DSLR Toggle */}
+                   <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                     <div className="flex items-start gap-4">
+                       <div className="p-2.5 bg-purple-50 text-purple-500 rounded-xl shrink-0 mt-0.5">
+                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
+                       </div>
+                       <div className="flex-1 min-w-0 flex items-center justify-between">
+                         <div>
+                           <label className="block text-sm font-bold text-slate-700 mb-1">Native DSLR Capture (Flash Sync)</label>
+                           <p className="text-[11px] text-slate-400">Picu tombol shutter kamera asli via digiCamControl agar Flash eksternal menyala. Wajib install digiCamControl.</p>
+                         </div>
+                         <button
+                           onClick={() => setNativeDslrCapture(!nativeDslrCapture)}
+                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${nativeDslrCapture ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                         >
+                           <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${nativeDslrCapture ? 'translate-x-6' : 'translate-x-1'}`} />
+                         </button>
                        </div>
                      </div>
                    </div>

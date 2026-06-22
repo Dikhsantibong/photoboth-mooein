@@ -889,7 +889,7 @@ function FlipbookPrintContent() {
   }, [uploadStage, router]);
 
   // ── QR Download URL ──────────────────────────────────
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://potopi.site";
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://clicksy-booth.ctechcreative.com";
   const downloadUrl = `${baseUrl.replace(/\/$/, '')}/downloads/${downloadToken}`;
 
   const isUploadInProgress = uploadStage === "idle" || uploadStage === "uploading";

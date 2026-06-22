@@ -6,10 +6,10 @@ import crypto from 'crypto';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const url = searchParams.get('url');
+    const imageUrl = searchParams.get('url');
 
-    if (!url) {
-      return new NextResponse('URL parameter is required', { status: 400 });
+    if (!imageUrl) {
+      return new NextResponse('URL is required', { status: 400 });
     }
 
     // Determine the user data path or fallback
@@ -22,12 +22,13 @@ export async function GET(request: Request) {
     }
 
     // Create a safe hash for the filename based on the URL
-    const hash = crypto.createHash('md5').update(url).digest('hex');
+    // We add the original query string to the hash if it exists to ensure unique versions are cached properly
+    const hash = crypto.createHash('md5').update(imageUrl).digest('hex');
     
     // Attempt to extract an extension from the URL path
     let ext = '.png';
     try {
-        const urlObj = new URL(url);
+        const urlObj = new URL(imageUrl);
         const urlPathExt = path.extname(urlObj.pathname);
         if (urlPathExt) ext = urlPathExt;
     } catch (e) {
@@ -36,12 +37,6 @@ export async function GET(request: Request) {
 
     const filename = `${hash}${ext}`;
     const filePath = path.join(cacheDir, filename);
-
-    const headers = new Headers();
-    // Set CORS headers so the canvas can load it without being tainted
-    headers.set('Access-Control-Allow-Origin', '*');
-    headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
 
     // If file exists in cache, serve it directly from disk
     if (fs.existsSync(filePath)) {
@@ -54,46 +49,51 @@ export async function GET(request: Request) {
       else if (lowerExt === '.webp') contentType = 'image/webp';
       else if (lowerExt === '.gif') contentType = 'image/gif';
       else if (lowerExt === '.svg') contentType = 'image/svg+xml';
-      
-      headers.set('Content-Type', contentType);
 
       return new NextResponse(fileBuffer, {
-        status: 200,
-        headers,
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
       });
     }
 
-    console.log(`[Image Proxy Cache] Fetching from remote: ${url}`);
-    const response = await fetch(url, {
+    // If not in cache, fetch it from the remote server
+    console.log(`[Cache Image] Fetching from remote: ${imageUrl}`);
+    const response = await fetch(imageUrl, {
         headers: {
+           // Provide a generic user agent to prevent 403s on some servers
            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
     });
 
     if (!response.ok) {
-      console.error(`[Image Proxy Cache] Failed to fetch image: ${response.statusText}`);
-      return new NextResponse(`Failed to fetch image: ${response.statusText}`, { status: response.status });
+      console.error(`[Cache Image] Failed to fetch image: ${response.status} ${response.statusText}`);
+      // Fallback: Just redirect to the URL if fetch fails so the browser can try
+      return NextResponse.redirect(imageUrl);
     }
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const contentType = response.headers.get('content-type') || 'image/png';
-    
-    headers.set('Content-Type', contentType);
 
     // Save to local cache permanently
-    try {
-        fs.writeFileSync(filePath, buffer);
-    } catch (writeErr) {
-        console.error(`[Image Proxy Cache] Error saving to cache: ${writeErr}`);
-    }
+    fs.writeFileSync(filePath, buffer);
+
+    const contentType = response.headers.get('content-type') || 'image/png';
 
     return new NextResponse(buffer, {
-      status: 200,
-      headers,
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      },
     });
-  } catch (error) {
-    console.error('Image Proxy Error:', error);
+
+  } catch (error: any) {
+    console.error('[Cache Image] Error:', error.message);
+    // Fallback: Redirect to original url on error
+    const { searchParams } = new URL(request.url);
+    const imageUrl = searchParams.get('url');
+    if (imageUrl) return NextResponse.redirect(imageUrl);
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }

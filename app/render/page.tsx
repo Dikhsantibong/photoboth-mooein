@@ -663,7 +663,7 @@ function RenderContent() {
               const fh = parseInt(fr.height, 10);
 
               // Hardware crop zoom to hide EOS Webcam Utility black bars
-              const CAMERA_ZOOM = 1.08;
+              const CAMERA_ZOOM = 1.20;
               const cropW = vid.videoWidth / CAMERA_ZOOM;
               const cropH = vid.videoHeight / CAMERA_ZOOM;
               const cropX = (vid.videoWidth - cropW) / 2;

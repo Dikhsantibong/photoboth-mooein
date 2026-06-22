@@ -264,108 +264,57 @@ function CameraContent() {
 
 
   const startCamera = useCallback(async () => {
+    const initStream = (stream: MediaStream) => {
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          setCameraReady(true);
+          if (streamRef.current) {
+            try {
+              let options: any = { mimeType: 'video/webm' };
+              if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
+                options = { mimeType: 'video/webm; codecs=vp8' };
+              }
+              recorderRef.current = new MediaRecorder(streamRef.current, options);
+              recorderRef.current.ondataavailable = (e) => {
+                if (e.data.size > 0) chunksRef.current.push(e.data);
+              };
+              recorderRef.current.onstop = () => {
+                const blob = new Blob(chunksRef.current, { type: recorderRef.current?.mimeType || 'video/webm' });
+                setVideos(prev => {
+                  const newVids = [...prev];
+                  newVids[currentFrameRef.current] = blob;
+                  return newVids;
+                });
+                chunksRef.current = [];
+              };
+            } catch (e) {
+              console.error("Failed to init MediaRecorder", e);
+            }
+          }
+        };
+        videoRef.current.play().catch(() => { });
+      }
+    };
 
     try {
-
       const preferredCameraId = localStorage.getItem("preferredCameraId");
-
       const constraints: MediaStreamConstraints = {
-
-        video: {
-
-          width: { ideal: 1920 }, height: { ideal: 1080 },
-
-          aspectRatio: { ideal: 16/9 },
-
-          ...(preferredCameraId ? { deviceId: preferredCameraId } : {})
-
-        },
-
+        video: preferredCameraId ? { deviceId: { exact: preferredCameraId } } : true,
         audio: false,
-
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-
-        videoRef.current.srcObject = stream;
-
-        videoRef.current.onloadedmetadata = () => {
-
-          setCameraReady(true);
-
-          // Initialize MediaRecorder for all canvas types to capture live photos
-
-          if (streamRef.current) {
-
-            try {
-
-              let options: any = { mimeType: 'video/webm' };
-
-              if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
-
-                options = { mimeType: 'video/webm; codecs=vp8' };
-
-              }
-
-              recorderRef.current = new MediaRecorder(streamRef.current, options);
-
-              recorderRef.current.ondataavailable = (e) => {
-
-                if (e.data.size > 0) chunksRef.current.push(e.data);
-
-              };
-
-              recorderRef.current.onstop = () => {
-                const blob = new Blob(chunksRef.current, { type: recorderRef.current?.mimeType || 'video/webm' });
-
-                setVideos(prev => {
-
-                  const newVids = [...prev];
-
-                  newVids[currentFrameRef.current] = blob;
-
-                  return newVids;
-
-                });
-
-                chunksRef.current = [];
-
-              };
-
-            } catch (e) {
-
-              console.error("Failed to init MediaRecorder", e);
-
-            }
-
-          }
-
-        };
-
-        videoRef.current.play().catch(() => { });
-
-      }
+      initStream(stream);
 
     } catch (e) {
-
       // Basic Fallback
-
       try {
-
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-
-        streamRef.current = stream;
-
-        if (videoRef.current) { videoRef.current.srcObject = stream; setCameraReady(true); }
-
+        initStream(stream);
       } catch (err) { console.error(err); }
-
     }
-
   }, []);
 
 
@@ -390,62 +339,79 @@ function CameraContent() {
 
 
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
 
     if (!videoRef.current || !canvasRef.current) return;
 
-    const video = videoRef.current;
-
-    const canvas = canvasRef.current;
-
-    canvas.width = video.videoWidth;
-
-    canvas.height = video.videoHeight;
-
-    const ctx = canvas.getContext("2d");
-
-    if (!ctx) return;
-
-
-
-    const CAMERA_ZOOM = 1.08;
-
-    const w = canvas.width;
-
-    const h = canvas.height;
-
-    
-
-    // Crop out hardware black bars (e.g., from EOS Webcam Utility)
-
-    const sw = w / CAMERA_ZOOM;
-
-    const sh = h / CAMERA_ZOOM;
-
-    const sx = (w - sw) / 2;
-
-    const sy = (h - sh) / 2;
-
-
-
-    if (isMirrored) {
-
-      ctx.translate(w, 0);
-
-      ctx.scale(-1, 1);
-
-    }
-
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
-
-    if (isMirrored) {
-
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-    }
-
+    // Stop MediaRecorder immediately to grab the perfect 3-second countdown video
+    // before the camera freezes or the native capture API causes a delay.
     if (recorderRef.current && (recorderRef.current.state === "recording" || recorderRef.current.state === "paused")) {
       recorderRef.current.stop();
+    }
+    
+    // Trigger UI screen flash instantly
+    setFlashActive(true);
+    setTimeout(() => setFlashActive(false), 150);
+
+    const nativeDslrEnabled = localStorage.getItem("nativeDslrCapture") === "true";
+    let nativePhotoImg: HTMLImageElement | null = null;
+
+    if (nativeDslrEnabled) {
+      try {
+        const res = await fetch('/api/camera/capture', { method: 'POST' });
+        const json = await res.json();
+        if (json.success && json.photoUrl) {
+          nativePhotoImg = new Image();
+          await new Promise((resolve, reject) => {
+            if (!nativePhotoImg) return reject();
+            nativePhotoImg.onload = resolve;
+            nativePhotoImg.onerror = reject;
+            nativePhotoImg.src = json.photoUrl;
+          });
+        } else {
+          console.error("Native Capture Failed:", json.message);
+        }
+      } catch (err) {
+        console.error("Native Capture API Error:", err);
+      }
+    }
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    const sourceW = nativePhotoImg ? nativePhotoImg.width : video.videoWidth;
+    const sourceH = nativePhotoImg ? nativePhotoImg.height : video.videoHeight;
+
+    canvas.width = sourceW;
+    canvas.height = sourceH;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    
+    // Native capture usually doesn't have black bars. Video screenshot gets hardware crop zoom.
+    const effectiveZoom = nativePhotoImg ? 1.0 : 1.20;
+    
+    const sw = w / effectiveZoom;
+    const sh = h / effectiveZoom;
+    const sx = (w - sw) / 2;
+    const sy = (h - sh) / 2;
+
+    if (isMirrored) {
+      ctx.translate(w, 0);
+      ctx.scale(-1, 1);
+    }
+
+    if (nativePhotoImg) {
+      ctx.drawImage(nativePhotoImg, sx, sy, sw, sh, 0, 0, w, h);
+    } else {
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+    }
+
+    if (isMirrored) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
     
     const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
@@ -454,9 +420,6 @@ function CameraContent() {
       u[currentFrame] = dataUrl;
       return u;
     });
-    
-    setFlashActive(true);
-    setTimeout(() => setFlashActive(false), 150);
 
     setShowPreview(true);
 
@@ -609,17 +572,14 @@ function CameraContent() {
 
 
   const getImageUrl = (path: string) => {
-
     if (!path) return "";
-
-    if (path.startsWith("http")) return path;
-
-    const cleanBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-
-    const cleanPath = path.startsWith("/") ? path.slice(1) : path;
-
-    return `${cleanBaseUrl}/storage/${cleanPath}`;
-
+    let url = path;
+    if (!path.startsWith("http")) {
+      const cleanBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+      const cleanPath = path.startsWith("/") ? path.slice(1) : path;
+      url = `${cleanBaseUrl}/storage/${cleanPath}`;
+    }
+    return `/api/cache-image?url=${encodeURIComponent(url)}`;
   };
 
 
@@ -735,10 +695,11 @@ function CameraContent() {
                               <video
                                 autoPlay playsInline muted
                                 className="absolute inset-0 w-full h-full"
-                                style={{ objectFit: 'cover', transform: `scaleX(${isMirrored ? -1 : 1}) scale(1.08)`, filter: getFilterStyle() }}
+                                style={{ objectFit: 'cover', transform: `scaleX(${isMirrored ? -1 : 1}) scale(1.20)`, filter: getFilterStyle() }}
                                 ref={(el) => {
                                   if (el && streamRef.current && el.srcObject !== streamRef.current) {
                                     el.srcObject = streamRef.current;
+                                    el.play().catch(() => {});
                                   }
                                 }}
                               />

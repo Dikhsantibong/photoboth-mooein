@@ -835,7 +835,7 @@ function PrintContent() {
     );
   }
 
-  const downloadUrl = `https://mooeinsnap.com/downloads/${downloadToken}`;
+  const downloadUrl = `https://clicksy-booth.ctechcreative.com/downloads/${downloadToken}`;
 
   return (
     <div className="relative h-screen w-full overflow-hidden p-2 sm:p-3 font-sans text-slate-900 flex flex-col" style={{ backgroundImage: customBgImage ? `url(${customBgImage})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}>
