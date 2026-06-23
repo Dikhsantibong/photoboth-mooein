@@ -32,6 +32,8 @@ export default function SettingsPage() {
   const [printerSplitName, setPrinterSplitName] = useState<string>("");
   const [printerOrientation, setPrinterOrientation] = useState<string>("landscape");
   const [nativeDslrCapture, setNativeDslrCapture] = useState<boolean>(false);
+  const [digiCamLiveView, setDigiCamLiveView] = useState<boolean>(false);
+  const [orderPrefix, setOrderPrefix] = useState<string>("MOOEIN");
   const [welcomeBgImage, setWelcomeBgImage] = useState<string>("");
   const [enabledCanvas, setEnabledCanvas] = useState<Record<string, boolean>>({
     koran: true,
@@ -154,6 +156,12 @@ export default function SettingsPage() {
       const savedNativeDslr = localStorage.getItem("nativeDslrCapture");
       if (savedNativeDslr) setNativeDslrCapture(savedNativeDslr === "true");
 
+      const savedDigiCamLive = localStorage.getItem("digiCamLiveView");
+      if (savedDigiCamLive) setDigiCamLiveView(savedDigiCamLive === "true");
+
+      const savedPrefix = localStorage.getItem("orderPrefix");
+      if (savedPrefix) setOrderPrefix(savedPrefix);
+
       const savedBg = localStorage.getItem("welcomeBgImage");
       if (savedBg) setWelcomeBgImage(savedBg);
 
@@ -244,6 +252,8 @@ export default function SettingsPage() {
     localStorage.setItem("preferredPrinterSplitName", printerSplitName);
     localStorage.setItem("printerOrientation", printerOrientation);
     localStorage.setItem("nativeDslrCapture", nativeDslrCapture ? "true" : "false");
+    localStorage.setItem("digiCamLiveView", digiCamLiveView ? "true" : "false");
+    localStorage.setItem("orderPrefix", orderPrefix.toUpperCase());
     localStorage.setItem("welcomeBgImage", welcomeBgImage);
     localStorage.setItem("enabledCanvas", JSON.stringify(enabledCanvas));
     localStorage.setItem("sessionTimeout", sessionTimeout.toString());
@@ -530,6 +540,27 @@ export default function SettingsPage() {
                      </div>
                    </div>
 
+                   {/* digiCamControl Live View Toggle */}
+                   <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                     <div className="flex items-start gap-4">
+                       <div className="p-2.5 bg-rose-50 text-rose-500 rounded-xl shrink-0 mt-0.5">
+                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                       </div>
+                       <div className="flex-1 min-w-0 flex items-center justify-between">
+                         <div>
+                           <label className="block text-sm font-bold text-slate-700 mb-1">Live View digiCamControl (1 Kabel USB)</label>
+                           <p className="text-[11px] text-slate-400">Menyalin video layar dari server digiCamControl. WAJIB aktifkan Web Server di digiCamControl port 5513. FPS akan lebih rendah.</p>
+                         </div>
+                         <button
+                           onClick={() => setDigiCamLiveView(!digiCamLiveView)}
+                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${digiCamLiveView ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                         >
+                           <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${digiCamLiveView ? 'translate-x-6' : 'translate-x-1'}`} />
+                         </button>
+                       </div>
+                     </div>
+                   </div>
+
                    {/* Printer Utama */}
                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
                      <div className="flex items-start gap-4">
@@ -611,6 +642,26 @@ export default function SettingsPage() {
                  <section className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300 max-w-2xl">
                    <div className="flex items-center justify-between mb-4">
                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">Tampilan Visual</h2>
+                   </div>
+
+                   {/* Awalan Order ID */}
+                   <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                     <div className="flex items-start gap-4">
+                       <div className="p-2.5 bg-indigo-50 text-indigo-500 rounded-xl shrink-0 mt-0.5">
+                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                       </div>
+                       <div className="flex-1 min-w-0">
+                         <label className="block text-sm font-bold text-slate-700 mb-1">Awalan Order ID (Prefix)</label>
+                         <p className="text-[11px] text-slate-400 mb-3">Teks ini akan menjadi awalan nomor Invoice (Contoh: {orderPrefix}-12345678). Gunakan huruf kapital, maksimal 10 karakter.</p>
+                         <input
+                           type="text"
+                           value={orderPrefix}
+                           onChange={(e) => setOrderPrefix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 10))}
+                           placeholder="Contoh: CTECH"
+                           className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase"
+                         />
+                       </div>
+                     </div>
                    </div>
 
                    {/* Background Welcome Page */}

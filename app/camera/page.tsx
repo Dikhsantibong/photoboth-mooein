@@ -72,6 +72,20 @@ function CameraContent() {
 
   // Template Data
 
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+
+
+  const [streamReady, setStreamReady] = useState(0);
+  const [isDigiCamLive, setIsDigiCamLive] = useState(false);
+  const [liveViewUrl, setLiveViewUrl] = useState<string>("");
+
+  const digiCamLoopRef = useRef<number | null>(null);
+
+  const liveViewCanvasRef = useRef<HTMLCanvasElement>(null);
+
+
+
   const [template, setTemplate] = useState<TemplateItem | null>(null);
 
   const [baseUrl, setBaseUrl] = useState("");
@@ -127,6 +141,12 @@ function CameraContent() {
   const [customBgImage, setCustomBgImage] = useState<string>("");
 
   useEffect(() => {
+    try {
+        const savedPrinter = localStorage.getItem("selectedPrinter");
+        // if (savedPrinter) setSelectedPrinter(savedPrinter);
+        const digiCamStatus = localStorage.getItem("digiCamLiveView") === "true";
+        setIsDigiCamLive(digiCamStatus);
+      } catch (e) { }
     const savedBg = localStorage.getItem("welcomeBgImage");
     if (savedBg) {
       setCustomBgImage(savedBg);
@@ -266,6 +286,7 @@ function CameraContent() {
   const startCamera = useCallback(async () => {
     const initStream = (stream: MediaStream) => {
       streamRef.current = stream;
+      setStreamReady(Date.now()); // Force re-render instantly
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
@@ -299,14 +320,75 @@ function CameraContent() {
     };
 
     try {
-      const preferredCameraId = localStorage.getItem("preferredCameraId");
-      const constraints: MediaStreamConstraints = {
-        video: preferredCameraId ? { deviceId: { exact: preferredCameraId } } : true,
-        audio: false,
-      };
+      const digiCamLiveMode = localStorage.getItem("digiCamLiveView") === "true";
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      initStream(stream);
+      if (digiCamLiveMode) {
+        // Mode DSLR (Nikon/Canon) via digiCamControl Polling
+        console.log("Memulai Live View DSLR (Polling)...");
+        
+        let isRunning = true;
+        const liveCanvas = liveViewCanvasRef.current;
+        (window as any)._stopDigiCamLoop = () => { isRunning = false; };
+        
+        let prevUrl = "";
+        const loop = async () => {
+          if (!isRunning) return;
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2000);
+            const res = await fetch(`/api/camera/liveview?t=${Date.now()}`, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            
+            if (res.ok) {
+              const blob = await res.blob();
+              if (blob.size > 500) { // Pastikan bukan gambar kosong
+                const url = URL.createObjectURL(blob);
+                
+                // 1. Tampilkan ke layar UI via state (agar React re-render otomatis)
+                setLiveViewUrl(old => {
+                  if (old) URL.revokeObjectURL(old);
+                  return url;
+                });
+                
+                // 2. Gambar ke kanvas rahasia untuk perekam GIF
+                if (liveCanvas) {
+                  const img = new Image();
+                  img.onload = () => {
+                    if (!isRunning || !liveCanvas) return;
+                    liveCanvas.width = img.width;
+                    liveCanvas.height = img.height;
+                    liveCanvas.getContext('2d')?.drawImage(img, 0, 0);
+                    
+                    if (!streamRef.current) {
+                      const stream = liveCanvas.captureStream(30);
+                      initStream(stream);
+                    }
+                  };
+                  img.src = url;
+                }
+              }
+            }
+          } catch (e) {
+            // Abaikan error timeout/koneksi
+          }
+          
+          if (isRunning) {
+            digiCamLoopRef.current = setTimeout(loop, 60) as unknown as number; // ~16 FPS
+          }
+        };
+        
+        loop();
+
+      } else {
+        // --- STANDARD WEBCAM MODE ---
+        const preferredCameraId = localStorage.getItem("preferredCameraId");
+        const constraints: MediaStreamConstraints = {
+          video: preferredCameraId && preferredCameraId !== "USB Video" ? { deviceId: { exact: preferredCameraId } } : true,
+          audio: false,
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        initStream(stream);
+      }
 
     } catch (e) {
       // Basic Fallback
@@ -320,11 +402,16 @@ function CameraContent() {
 
 
   const stopCamera = useCallback(() => {
-
+    if ((window as any)._stopDigiCamLoop) {
+      (window as any)._stopDigiCamLoop();
+      (window as any)._stopDigiCamLoop = null;
+    }
+    if (digiCamLoopRef.current) {
+      cancelAnimationFrame(digiCamLoopRef.current);
+      digiCamLoopRef.current = null;
+    }
     streamRef.current?.getTracks().forEach((t) => t.stop());
-
     streamRef.current = null;
-
   }, []);
 
 
@@ -365,22 +452,49 @@ function CameraContent() {
           await new Promise((resolve, reject) => {
             if (!nativePhotoImg) return reject();
             nativePhotoImg.onload = resolve;
-            nativePhotoImg.onerror = reject;
+            nativePhotoImg.onerror = () => {
+              console.warn("Gagal memuat gambar High-Res, menggunakan Live View snapshot.");
+              nativePhotoImg = null;
+              resolve(null); // Jangan reject, biarkan fallback bekerja
+            };
             nativePhotoImg.src = json.photoUrl;
           });
-        } else {
-          console.error("Native Capture Failed:", json.message);
+        } else if (!json.success) {
+          console.warn("Capture API:", json.message || "Gagal, menggunakan fallback.");
         }
+        // Jika json.success tapi photoUrl null, diam saja — fallback canvas akan bekerja
       } catch (err) {
-        console.error("Native Capture API Error:", err);
+        console.warn("Capture API tidak tersedia, menggunakan Live View snapshot.");
       }
     }
 
+    const isDigiCamLive = localStorage.getItem("digiCamLiveView") === "true";
+    const liveCanvas = liveViewCanvasRef.current;
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
-    const sourceW = nativePhotoImg ? nativePhotoImg.width : video.videoWidth;
-    const sourceH = nativePhotoImg ? nativePhotoImg.height : video.videoHeight;
+    let sourceW = 0;
+    let sourceH = 0;
+    let drawableSource: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null = null;
+
+    if (nativePhotoImg) {
+      sourceW = nativePhotoImg.width;
+      sourceH = nativePhotoImg.height;
+      drawableSource = nativePhotoImg;
+    } else if (isDigiCamLive && liveCanvas && liveCanvas.width > 0) {
+      sourceW = liveCanvas.width;
+      sourceH = liveCanvas.height;
+      drawableSource = liveCanvas;
+    } else {
+      sourceW = video.videoWidth;
+      sourceH = video.videoHeight;
+      drawableSource = video;
+    }
+
+    if (!sourceW || !sourceH || !drawableSource) {
+      console.error("No valid source to capture photo from.");
+      return;
+    }
 
     canvas.width = sourceW;
     canvas.height = sourceH;
@@ -392,7 +506,7 @@ function CameraContent() {
     const h = canvas.height;
     
     // Native capture usually doesn't have black bars. Video screenshot gets hardware crop zoom.
-    const effectiveZoom = nativePhotoImg ? 1.0 : 1.20;
+    const effectiveZoom = (nativePhotoImg || isDigiCamLive) ? 1.0 : 1.20;
     
     const sw = w / effectiveZoom;
     const sh = h / effectiveZoom;
@@ -404,11 +518,7 @@ function CameraContent() {
       ctx.scale(-1, 1);
     }
 
-    if (nativePhotoImg) {
-      ctx.drawImage(nativePhotoImg, sx, sy, sw, sh, 0, 0, w, h);
-    } else {
-      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
-    }
+    ctx.drawImage(drawableSource, sx, sy, sw, sh, 0, 0, w, h);
 
     if (isMirrored) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -651,9 +761,10 @@ function CameraContent() {
               </div>
 
               <div className="flex-1 min-h-0 bg-white rounded-[20px] shadow-2xl p-4 flex flex-col items-center relative overflow-hidden border-3 border-white gap-4">
-                {/* Hidden video for capture function */}
+                {/* Hidden video and canvas for capture & stream functions */}
                 <div className="absolute opacity-0 pointer-events-none w-[1px] h-[1px] overflow-hidden">
                   <video ref={videoRef} autoPlay playsInline muted />
+                  <canvas ref={liveViewCanvasRef} />
                 </div>
 
                 <div className="flex-1 min-h-0 w-full flex items-center justify-center relative">
@@ -692,17 +803,33 @@ function CameraContent() {
                             }}
                           >
                             {isCurrent && !showPreview ? (
-                              <video
-                                autoPlay playsInline muted
-                                className="absolute inset-0 w-full h-full"
-                                style={{ objectFit: 'cover', transform: `scaleX(${isMirrored ? -1 : 1}) scale(1.20)`, filter: getFilterStyle() }}
-                                ref={(el) => {
-                                  if (el && streamRef.current && el.srcObject !== streamRef.current) {
-                                    el.srcObject = streamRef.current;
-                                    el.play().catch(() => {});
-                                  }
-                                }}
-                              />
+                              isDigiCamLive ? (
+                                liveViewUrl ? (
+                                  <img
+                                    src={liveViewUrl}
+                                    className="absolute inset-0 w-full h-full"
+                                    style={{ objectFit: 'cover', transform: `scaleX(${isMirrored ? -1 : 1}) scale(1.20)`, filter: getFilterStyle() }}
+                                    alt=""
+                                  />
+                                ) : (
+                                  <div className="flex items-center justify-center w-full h-full">
+                                    <div className="animate-pulse text-slate-400 text-sm font-medium">Menghubungkan kamera...</div>
+                                  </div>
+                                )
+                              ) : (
+                                <video
+                                  key={`video-stream-${streamReady}`}
+                                  autoPlay playsInline muted
+                                  className="absolute inset-0 w-full h-full"
+                                  style={{ objectFit: 'cover', transform: `scaleX(${isMirrored ? -1 : 1}) scale(1.20)`, filter: getFilterStyle() }}
+                                  ref={(el) => {
+                                    if (el && streamRef.current && el.srcObject !== streamRef.current) {
+                                      el.srcObject = streamRef.current;
+                                      el.play().catch(() => {});
+                                    }
+                                  }}
+                                />
+                              )
                             ) : (photo || (isCurrent && showPreview)) ? (
                               <img
                                 src={photo || photos[currentFrame]!}

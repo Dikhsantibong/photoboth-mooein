@@ -253,7 +253,8 @@ function PembayaranContent() {
   // ── Helper: Create Transaction on Backend ──
   const createTransaction = async (paymentType: "qris" | "voucher", voucherId?: number | null): Promise<number | null> => {
     try {
-      const txId = `MOOEIN-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const prefix = localStorage.getItem("orderPrefix") || "MOOEIN";
+      const txId = `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
       const response = await fetch(`/api/transactions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -293,6 +294,7 @@ function PembayaranContent() {
       if (!pricingData || !pricingData.server_key) return;
 
       try {
+        const prefix = localStorage.getItem("orderPrefix") || "MOOEIN";
         const response = await fetch(`/api/generate-qris`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -303,6 +305,7 @@ function PembayaranContent() {
             server_key: pricingData.server_key,
             client_key: pricingData.client_key,
             is_production: pricingData.is_production === true,
+            order_prefix: prefix,
           })
         });
         const result = await response.json();

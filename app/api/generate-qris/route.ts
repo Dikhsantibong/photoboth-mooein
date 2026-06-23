@@ -1,15 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import * as crypto from 'crypto';
 
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { amount, canvas_type, server_key, client_key, gateway_name, is_production } = await request.json();
+    const { amount, canvas_type, server_key, client_key, gateway_name, is_production, order_prefix } = await req.json();
+    const finalPrefix = order_prefix || "MOOEIN";
 
     if (gateway_name === 'Doku') {
-      return handleDoku(amount, server_key, client_key, is_production);
+      return handleDoku(amount, server_key, client_key, is_production, finalPrefix);
     } else {
       // Default / fallback to Midtrans
-      return handleMidtrans(amount, canvas_type, server_key, is_production);
+      return handleMidtrans(amount, canvas_type, server_key, is_production, finalPrefix);
     }
 
   } catch (error) {
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
 }
 
 // ── Midtrans Handler ──────────────────────────────────────
-async function handleMidtrans(amount: number, canvas_type: string, server_key: string, is_production: boolean) {
+async function handleMidtrans(amount: number, canvas_type: string, server_key: string, is_production: boolean, prefix: string) {
   if (!server_key) {
     return NextResponse.json({ success: false, message: 'Midtrans Server Key is required' }, { status: 400 });
   }
@@ -28,7 +29,7 @@ async function handleMidtrans(amount: number, canvas_type: string, server_key: s
     ? 'https://app.midtrans.com/snap/v1/transactions' 
     : 'https://app.sandbox.midtrans.com/snap/v1/transactions';
 
-  const orderId = `MOOEIN-${Date.now()}`;
+  const orderId = `${prefix}-${Date.now()}`;
 
   const response = await fetch(midtransUrl, {
     method: 'POST',
@@ -72,7 +73,7 @@ async function handleMidtrans(amount: number, canvas_type: string, server_key: s
 }
 
 // ── Doku Handler (Jokul V2 Direct API) ────────────────────
-async function handleDoku(amount: number, server_key: string, client_key: string, is_production: boolean) {
+async function handleDoku(amount: number, server_key: string, client_key: string, is_production: boolean, prefix: string) {
   if (!server_key || !client_key) {
     return NextResponse.json({ success: false, message: 'Doku Client ID and Secret are required' }, { status: 400 });
   }
@@ -86,7 +87,7 @@ async function handleDoku(amount: number, server_key: string, client_key: string
   
   const body = {
     order: {
-      invoice_number: `MOOEIN-${Date.now()}`,
+      invoice_number: `${prefix}-${Date.now()}`,
       amount: amount
     }
   };

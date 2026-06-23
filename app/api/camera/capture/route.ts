@@ -1,107 +1,161 @@
 import { NextResponse } from 'next/server';
 import { exec } from 'child_process';
-import path from 'path';
-import fs from 'fs';
 import util from 'util';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 const execPromise = util.promisify(exec);
 
+export const dynamic = 'force-dynamic';
+
+/**
+ * Scan a directory recursively for the newest .jpg file created after `afterTimestamp`.
+ */
+function findNewestPhoto(dir: string, afterTimestamp: number): string | null {
+  let newestFile: string | null = null;
+  let newestTime = afterTimestamp;
+
+  try {
+    if (!fs.existsSync(dir)) return null;
+    
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        // Recurse into subdirectories (Session 1, Session 2, etc.)
+        const found = findNewestPhoto(fullPath, afterTimestamp);
+        if (found) {
+          const foundTime = fs.statSync(found).mtimeMs;
+          if (foundTime > newestTime) {
+            newestFile = found;
+            newestTime = foundTime;
+          }
+        }
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (ext === '.jpg' || ext === '.jpeg' || ext === '.cr2' || ext === '.nef' || ext === '.png') {
+          try {
+            const stat = fs.statSync(fullPath);
+            if (stat.mtimeMs > newestTime && stat.size > 10000) { // > 10KB = foto asli
+              newestFile = fullPath;
+              newestTime = stat.mtimeMs;
+            }
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (e) {}
+
+  return newestFile;
+}
+
 export async function POST() {
   try {
-    const userData = process.env.USER_DATA_PATH || process.cwd();
-    const tempDir = path.join(userData, 'temp_captures');
+    console.log("=== DSLR Capture Started ===");
+
+    // Folder-folder yang mungkin digunakan digiCamControl untuk menyimpan foto
+    const homeDir = os.homedir();
+    const searchFolders = [
+      path.join(homeDir, 'OneDrive', 'Pictures', 'digiCamControl'),
+      path.join(homeDir, 'Pictures', 'digiCamControl'),
+      path.join(homeDir, 'OneDrive', 'Gambar', 'digiCamControl'),
+      path.join(homeDir, 'Gambar', 'digiCamControl'),
+    ];
     
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
+    // Catat waktu SEBELUM kita menjepret
+    const beforeTimestamp = Date.now() - 1000; // 1 detik margin
 
-    // Generate unique filename for this capture
-    const timestamp = Date.now();
-    const filename = `capture_${timestamp}.jpg`;
-    const filepath = path.join(tempDir, filename);
-
-    // Default install path for digiCamControl
-    const dccPath = `"C:\\Program Files (x86)\\digiCamControl\\CameraControlCmd.exe"`;
-    
-    // Command to capture and save to specific path
-    const command = `${dccPath} /capture /filename "${filepath}"`;
-
-    console.log(`Executing DSLR capture: ${command}`);
-
-    let stdoutStr = "";
-    let stderrStr = "";
-
-    // Set a timeout so we don't hang forever if camera is stuck
+    // 1. Kirim perintah capture ke digiCamControl via RemoteCmd (Anti-gagal & bypass HTTP)
     try {
-      const { stdout, stderr } = await execPromise(command, { timeout: 10000 });
-      stdoutStr = stdout;
-      stderrStr = stderr;
-      console.log("digiCamControl output:", stdout);
-    } catch (execError: any) {
-      console.error("digiCamControl execution error:", execError);
+      const dccRemotePath = `"C:\\Program Files (x86)\\digiCamControl\\CameraControlRemoteCmd.exe"`;
+      await execPromise(`${dccRemotePath} /c capture`);
+      console.log("Capture command sent via RemoteCmd.");
+    } catch (execErr: any) {
+      console.error("Gagal mengirim perintah RemoteCmd:", execErr.message);
       return NextResponse.json({ 
         success: false, 
-        message: 'Gagal mengeksekusi digiCamControl. Pastikan aplikasi tersebut terinstal dan kamera terhubung.',
-        error: execError.message
+        message: 'Gagal mengeksekusi CameraControlRemoteCmd. Pastikan digiCamControl berjalan.'
       }, { status: 500 });
     }
 
-    // Wait for file to be created (digiCamControl might run asynchronously if GUI is open)
-    let fileFound = false;
-    let attempts = 0;
-    while (attempts < 20) { // 20 attempts * 400ms = 8 seconds timeout
-      if (fs.existsSync(filepath)) {
-        try {
-          const stats = fs.statSync(filepath);
-          // Ensure file is completely written (larger than 0 bytes)
-          if (stats.size > 1000) { 
-            // Add a small delay to ensure OS file write buffers are flushed
-            await new Promise(resolve => setTimeout(resolve, 300));
-            fileFound = true;
-            break;
-          }
-        } catch (e) {
-          // File might be locked during write, ignore and retry
-        }
+    // 2. Polling: cari file foto BARU di semua folder digiCamControl
+    let photoPath: string | null = null;
+    
+    for (let attempt = 0; attempt < 16; attempt++) { // Maks 8 detik (16 x 500ms)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      for (const folder of searchFolders) {
+        photoPath = findNewestPhoto(folder, beforeTimestamp);
+        if (photoPath) break;
       }
-      await new Promise(resolve => setTimeout(resolve, 400));
-      attempts++;
-    }
-
-    if (!fileFound) {
-      return NextResponse.json({ 
-        success: false, 
-        message: `Kamera dipicu tetapi file foto tidak ditemukan (Waktu habis menunggu proses simpan foto).\nLog digiCamControl:\n${stdoutStr}`
-      }, { status: 500 });
-    }
-
-    // Read file and convert to Base64 to send immediately to frontend
-    const fileBuffer = fs.readFileSync(filepath);
-    const base64Data = `data:image/jpeg;base64,${fileBuffer.toString('base64')}`;
-
-    // Clean up older files (keep only last 10 to save space)
-    try {
-      const files = fs.readdirSync(tempDir)
-        .filter(f => f.startsWith('capture_'))
-        .sort()
-        .reverse();
+      
+      if (photoPath) {
+        // Pastikan file selesai ditulis (ukuran stabil)
+        const size1 = fs.statSync(photoPath).size;
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const size2 = fs.statSync(photoPath).size;
         
-      if (files.length > 10) {
-        for (let i = 10; i < files.length; i++) {
-          fs.unlinkSync(path.join(tempDir, files[i]));
+        if (size1 === size2 && size1 > 10000) {
+          console.log(`Foto ditemukan: ${photoPath} (${(size2 / 1024).toFixed(0)} KB, attempt ${attempt + 1})`);
+          break;
+        } else {
+          photoPath = null; // File masih ditulis, coba lagi
         }
       }
-    } catch (cleanupError) {
-      console.error("Failed to clean up old temp captures:", cleanupError);
     }
 
+    // 3. Restart Live View di digiCamControl agar preview tidak macet
+    try {
+      // Tunggu sebentar agar kamera selesai saving sebelum memaksa Live View menyala lagi
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const dccRemotePath = `"C:\\Program Files (x86)\\digiCamControl\\CameraControlRemoteCmd.exe"`;
+      // Start live view via HTTP Web Server as primary
+      await fetch("http://127.0.0.1:5513/?slc=startliveview", {
+        method: "GET",
+        cache: "no-store",
+        signal: AbortSignal.timeout(2000),
+      }).catch(() => {});
+      
+      console.log("Live View restarted.");
+    } catch (e) {
+      // Tidak fatal jika gagal
+    }
+
+    // 4. Baca file dan konversi ke Base64
+    if (photoPath) {
+      try {
+        const fileBuffer = fs.readFileSync(photoPath);
+        const ext = path.extname(photoPath).toLowerCase();
+        const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+        const base64Data = `data:${mimeType};base64,${fileBuffer.toString('base64')}`;
+        
+        console.log(`=== Capture berhasil! File: ${path.basename(photoPath)} ===`);
+        
+        return NextResponse.json({ 
+          success: true, 
+          photoUrl: base64Data 
+        });
+      } catch (readErr: any) {
+        console.error("Gagal membaca file foto:", readErr.message);
+      }
+    }
+
+    // 5. Fallback: tidak ada foto ditemukan
+    console.warn("=== Foto High-Res tidak ditemukan ===");
+    console.warn("Folder yang dicari:", searchFolders.filter(f => fs.existsSync(f)).join(", "));
+    
     return NextResponse.json({ 
       success: true, 
-      photoUrl: base64Data 
+      photoUrl: null 
     });
 
   } catch (error: any) {
-    console.error("Native Capture Error:", error);
-    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+    console.error("Capture Route Error:", error);
+    return NextResponse.json({ 
+      success: false, 
+      message: 'Internal Server Error: ' + error.message 
+    }, { status: 500 });
   }
 }
