@@ -41,6 +41,8 @@ export default function SettingsPage() {
     flipbook: true
   });
   const [sessionTimeout, setSessionTimeout] = useState<number>(300);
+  const [autoAdvanceCountdown, setAutoAdvanceCountdown] = useState<boolean>(false);
+  const [gestureDetection, setGestureDetection] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<"api" | "hardware" | "display" | "features" | "session">("api");
 
   // Queue state
@@ -175,6 +177,12 @@ export default function SettingsPage() {
       const savedTimeout = localStorage.getItem("sessionTimeout");
       if (savedTimeout) setSessionTimeout(parseInt(savedTimeout, 10));
 
+      const savedAutoAdvance = localStorage.getItem("autoAdvanceCountdown");
+      if (savedAutoAdvance) setAutoAdvanceCountdown(savedAutoAdvance === "true");
+
+      const savedGesture = localStorage.getItem("gestureDetection");
+      if (savedGesture) setGestureDetection(savedGesture === "true");
+
     } catch (err) {
       console.error("Hardware fetch err:", err);
     }
@@ -257,6 +265,8 @@ export default function SettingsPage() {
     localStorage.setItem("welcomeBgImage", welcomeBgImage);
     localStorage.setItem("enabledCanvas", JSON.stringify(enabledCanvas));
     localStorage.setItem("sessionTimeout", sessionTimeout.toString());
+    localStorage.setItem("autoAdvanceCountdown", autoAdvanceCountdown ? "true" : "false");
+    localStorage.setItem("gestureDetection", gestureDetection ? "true" : "false");
     showToast("Pengaturan Hardware & Fitur disimpan!", "success");
   };
 
@@ -790,7 +800,7 @@ export default function SettingsPage() {
                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">Manajemen Fitur</h2>
                    </div>
 
-                   <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden divide-y divide-slate-100">
+                   <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden divide-y divide-slate-100 mb-6">
                      {[
                        { id: 'koran', label: 'Kanvas Koran', desc: 'Layout ala koran editorial' },
                        { id: 'reguler', label: 'Kanvas Reguler', desc: 'Layout photostrip klasik' },
@@ -810,6 +820,42 @@ export default function SettingsPage() {
                        </div>
                      ))}
                    </div>
+
+                   <h3 className="text-lg font-bold text-slate-800 tracking-tight mt-6 mb-3">Otomasi Sesi Foto</h3>
+                   <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden divide-y divide-slate-100">
+                     <div className="p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                       <div className="flex flex-col pr-4">
+                         <span className="text-sm font-bold text-slate-700">Auto-Advance Countdown</span>
+                         <span className="text-[11px] text-slate-400">Pindah ke frame berikutnya secara otomatis dengan jeda 2 detik (tanpa perlu menekan tombol Lanjut).</span>
+                       </div>
+                       <button
+                         onClick={() => {
+                           setAutoAdvanceCountdown(!autoAdvanceCountdown);
+                           if (!autoAdvanceCountdown) setGestureDetection(false); // Matikan gesture jika auto-advance hidup
+                         }}
+                         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${autoAdvanceCountdown ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                       >
+                         <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${autoAdvanceCountdown ? 'translate-x-5' : 'translate-x-0'}`} />
+                       </button>
+                     </div>
+
+                     <div className="p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                       <div className="flex flex-col pr-4">
+                         <span className="text-sm font-bold text-slate-700">Deteksi Jari (V-Sign ✌️)</span>
+                         <span className="text-[11px] text-slate-400">Otomatis jepret jika kamera mendeteksi pose 2 jari (Peace/V-Sign). Hanya bekerja jika Auto-Advance mati.</span>
+                       </div>
+                       <button
+                         onClick={() => {
+                           setGestureDetection(!gestureDetection);
+                           if (!gestureDetection) setAutoAdvanceCountdown(false); // Matikan auto-advance jika gesture hidup
+                         }}
+                         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${gestureDetection ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                       >
+                         <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${gestureDetection ? 'translate-x-5' : 'translate-x-0'}`} />
+                       </button>
+                     </div>
+                   </div>
+
                    <p className="px-2 text-[11px] text-slate-400 italic">
                      Catatan: Matikan fitur jika tidak ingin ditampilkan di halaman "Pilih Kanvas".
                    </p>
