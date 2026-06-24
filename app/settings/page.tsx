@@ -43,6 +43,7 @@ export default function SettingsPage() {
   const [sessionTimeout, setSessionTimeout] = useState<number>(300);
   const [autoAdvanceCountdown, setAutoAdvanceCountdown] = useState<boolean>(false);
   const [gestureDetection, setGestureDetection] = useState<boolean>(false);
+  const [countdownDuration, setCountdownDuration] = useState<number>(3);
   const [activeTab, setActiveTab] = useState<"api" | "hardware" | "display" | "features" | "session">("api");
 
   // Queue state
@@ -183,6 +184,9 @@ export default function SettingsPage() {
       const savedGesture = localStorage.getItem("gestureDetection");
       if (savedGesture) setGestureDetection(savedGesture === "true");
 
+      const savedCountdown = localStorage.getItem("countdownDuration");
+      if (savedCountdown) setCountdownDuration(parseInt(savedCountdown, 10));
+
     } catch (err) {
       console.error("Hardware fetch err:", err);
     }
@@ -267,6 +271,7 @@ export default function SettingsPage() {
     localStorage.setItem("sessionTimeout", sessionTimeout.toString());
     localStorage.setItem("autoAdvanceCountdown", autoAdvanceCountdown ? "true" : "false");
     localStorage.setItem("gestureDetection", gestureDetection ? "true" : "false");
+    localStorage.setItem("countdownDuration", countdownDuration.toString());
     showToast("Pengaturan Hardware & Fitur disimpan!", "success");
   };
 
@@ -819,6 +824,25 @@ export default function SettingsPage() {
                          </button>
                        </div>
                      ))}
+                   </div>
+
+                   <h3 className="text-lg font-bold text-slate-800 tracking-tight mt-6 mb-3">Waktu & Durasi</h3>
+                   <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-6">
+                     <div className="p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                       <div className="flex flex-col pr-4">
+                         <span className="text-sm font-bold text-slate-700">Durasi Hitung Mundur (Detik)</span>
+                         <span className="text-[11px] text-slate-400">Pilih durasi waktu sebelum foto diambil secara otomatis.</span>
+                       </div>
+                       <select
+                         value={countdownDuration}
+                         onChange={(e) => setCountdownDuration(parseInt(e.target.value))}
+                         className="bg-slate-100 text-slate-800 text-sm font-bold rounded-xl px-4 py-2 border-0 outline-none cursor-pointer hover:bg-slate-200 transition-colors"
+                       >
+                         <option value={3}>3 Detik</option>
+                         <option value={5}>5 Detik</option>
+                         <option value={10}>10 Detik</option>
+                       </select>
+                     </div>
                    </div>
 
                    <h3 className="text-lg font-bold text-slate-800 tracking-tight mt-6 mb-3">Otomasi Sesi Foto</h3>

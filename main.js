@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
 const fs = require('fs');
+const { autoUpdater } = require('electron-updater');
 
 const dev = !app.isPackaged;
 
@@ -134,6 +135,13 @@ app.whenReady().then(async () => {
       server.listen(port, () => {
         console.log(`> Next.js Server ready on http://${hostname}:${port}`);
         createWindow();
+        
+        // Cek update otomatis saat server Next.js production sudah berjalan
+        try {
+          autoUpdater.checkForUpdatesAndNotify();
+        } catch (e) {
+          console.error("AutoUpdater error: ", e);
+        }
       });
     } catch (err) {
       console.error('Next.js prepare failed:', err);
@@ -156,3 +164,14 @@ app.on('window-all-closed', () => {
   }
 });
 
+// ── AutoUpdater Events ────────────────────────────────────
+autoUpdater.on('update-available', () => {
+  console.log('> Update available.');
+});
+
+autoUpdater.on('update-downloaded', () => {
+  console.log('> Update downloaded. Quitting and installing...');
+  // Untuk photobooth, mungkin lebih baik tunggu sampai tidak ada aktivitas sebelum restart
+  // Tapi untuk saat ini kita auto-restart agar terupdate.
+  autoUpdater.quitAndInstall();
+});

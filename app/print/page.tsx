@@ -535,6 +535,14 @@ function PrintContent() {
       const rawPrintPrice = amountPrintForCanvas(pricing, canvasType);
       const finalPrice = isExtra ? Math.round(Number(rawPrintPrice)) : 0;
       const targetQty = customQty || printCopies;
+      const finalImageData = localStorage.getItem("finalRenderImage");
+      
+      // Validasi: pastikan gambar final tidak kosong/hitam (data URL yang sangat kecil = gambar hitam)
+      if (!finalImageData || finalImageData.length < 5000) {
+        console.error("finalRenderImage terlalu kecil atau kosong, kemungkinan gambar hitam. Length:", finalImageData?.length);
+        if (!isAutoPrint) alert("Gambar hasil render tidak valid. Silakan ulangi sesi foto.");
+        return;
+      }
 
       const response = await fetch(`/api/final-images/${dbId || 0}/print`, {
         method: "POST",
@@ -544,7 +552,7 @@ function PrintContent() {
           print_quantity: isExtra ? targetQty : 1,
           printer_name: targetPrinter,
           printer_orientation: orientation,
-          image_data: localStorage.getItem("finalRenderImage"),
+          image_data: finalImageData,
           copies: isExtra ? targetQty : 1,
           print_size: printSize
         }),

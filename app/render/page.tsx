@@ -106,10 +106,23 @@ function RenderContent() {
         for (let i = 0; i < photos.length; i++) {
           setLoadingProgress(Math.round(((i + 1) / totalSteps) * 100));
           if (!photos[i] || !frames[i]) continue;
+          
+          // Validasi: pastikan data foto tidak terlalu kecil (gambar hitam biasanya < 1KB)
+          if (photos[i].length < 1000) {
+            console.warn(`Photo ${i} data too small (${photos[i].length} chars), skipping — kemungkinan gambar hitam`);
+            continue;
+          }
 
           await new Promise<void>((resolve) => {
             const img = new Image();
             img.onload = () => {
+              // Validasi dimensi gambar yang dimuat
+              if (img.width === 0 || img.height === 0) {
+                console.warn(`Photo ${i} loaded but has zero dimensions, skipping`);
+                resolve();
+                return;
+              }
+              
               const x = parseInt(frames[i].x, 10);
               const y = parseInt(frames[i].y, 10);
               const fw = parseInt(frames[i].width, 10);
@@ -134,6 +147,10 @@ function RenderContent() {
               ctx.drawImage(img, sx, sy, sw, sh, -fw / 2, -fh / 2, fw, fh);
               ctx.restore();
               resolve();
+            };
+            img.onerror = () => {
+              console.error(`Failed to load photo ${i} in render, skipping frame`);
+              resolve(); // Lanjutkan ke frame berikutnya, jangan hang
             };
             img.src = photos[i];
           });
@@ -511,7 +528,11 @@ function RenderContent() {
       const finishStaticImage = () => {
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, dim.w, dim.h);
-        ctx.drawImage(baseImg, 0, 0);
+        if (baseImg.width > 0 && baseImg.height > 0) {
+          ctx.drawImage(baseImg, 0, 0);
+        } else {
+          console.error("baseImg has zero dimensions, final image may be incomplete");
+        }
         for (const { img, st } of stickerImages) {
           if (img.src) {
             ctx.save();

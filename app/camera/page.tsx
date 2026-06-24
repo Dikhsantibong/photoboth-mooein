@@ -142,6 +142,7 @@ function CameraContent() {
   const [customBgImage, setCustomBgImage] = useState<string>("");
   const [autoAdvance, setAutoAdvance] = useState(false);
   const [gestureDetect, setGestureDetect] = useState(false);
+  const [countdownDuration, setCountdownDuration] = useState(3);
 
   useEffect(() => {
     try {
@@ -160,6 +161,9 @@ function CameraContent() {
     
     const savedGesture = localStorage.getItem("gestureDetection") === "true";
     setGestureDetect(savedGesture);
+    
+    const savedCountdown = localStorage.getItem("countdownDuration");
+    if (savedCountdown) setCountdownDuration(parseInt(savedCountdown, 10));
   }, []);
 
   const [handLandmarker, setHandLandmarker] = useState<HandLandmarker | null>(null);
@@ -251,7 +255,7 @@ function CameraContent() {
           if (trigger) {
             console.log("V-Sign Detected! Triggering Capture.");
             gestureHistoryRef.current = []; // reset
-            setCountdown(3);
+            setCountdown(countdownDuration);
             return; // stop detection loop while countdown runs
           }
         } catch (e) {
@@ -592,22 +596,33 @@ function CameraContent() {
     let sourceH = 0;
     let drawableSource: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null = null;
 
-    if (nativePhotoImg) {
+    if (nativePhotoImg && nativePhotoImg.width > 0 && nativePhotoImg.height > 0) {
       sourceW = nativePhotoImg.width;
       sourceH = nativePhotoImg.height;
       drawableSource = nativePhotoImg;
-    } else if (isDigiCamLive && liveCanvas && liveCanvas.width > 0) {
+    } else if (isDigiCamLive && liveCanvas && liveCanvas.width > 0 && liveCanvas.height > 0) {
+      // Validasi bahwa canvas benar-benar ada pixel yang digambar (bukan canvas kosong)
+      const checkCtx = liveCanvas.getContext('2d');
+      if (checkCtx) {
+        const sample = checkCtx.getImageData(0, 0, 1, 1).data;
+        // Jika pixel pertama sepenuhnya hitam (r=0,g=0,b=0,a=0), kemungkinan canvas belum digambar
+        if (sample[3] === 0) {
+          console.warn("LiveView canvas kosong, menunggu frame berikutnya...");
+          // Tunggu sebentar agar polling live view sempat menggambar frame
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
       sourceW = liveCanvas.width;
       sourceH = liveCanvas.height;
       drawableSource = liveCanvas;
-    } else {
+    } else if (video.videoWidth > 0 && video.videoHeight > 0) {
       sourceW = video.videoWidth;
       sourceH = video.videoHeight;
       drawableSource = video;
     }
 
     if (!sourceW || !sourceH || !drawableSource) {
-      console.error("No valid source to capture photo from.");
+      console.error("No valid source to capture photo from. sourceW:", sourceW, "sourceH:", sourceH);
       return;
     }
 
@@ -639,7 +654,26 @@ function CameraContent() {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
     
+    // Validasi hasil canvas — pastikan bukan gambar hitam/kosong
+    const checkPixel = ctx.getImageData(Math.floor(w / 2), Math.floor(h / 2), 1, 1).data;
+    const isBlack = checkPixel[0] === 0 && checkPixel[1] === 0 && checkPixel[2] === 0;
+    if (isBlack) {
+      console.warn("Captured image appears to be black, checking edge pixel...");
+      const edgePixel = ctx.getImageData(Math.floor(w / 4), Math.floor(h / 4), 1, 1).data;
+      if (edgePixel[0] === 0 && edgePixel[1] === 0 && edgePixel[2] === 0) {
+        console.error("Captured photo is entirely black! Discarding.");
+        return; // Jangan simpan foto hitam
+      }
+    }
+    
     const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+    
+    // Validasi ukuran data URL — gambar hitam biasanya sangat kecil
+    if (dataUrl.length < 1000) {
+      console.error("Captured photo data too small (", dataUrl.length, "chars), likely black. Discarding.");
+      return;
+    }
+    
     setPhotos((prev) => {
       const u = [...prev];
       u[currentFrame] = dataUrl;
@@ -706,6 +740,11 @@ function CameraContent() {
 
           };
 
+          img.onerror = () => {
+            console.error(`Failed to load photo ${i} for filter processing, using raw`);
+            resolve(raw); // Fallback: gunakan foto mentah tanpa filter daripada hilang
+          };
+
           img.src = raw;
 
         });
@@ -733,7 +772,7 @@ function CameraContent() {
       setCurrentFrame(nextEmpty !== -1 ? nextEmpty : firstEmpty);
       
       if (autoTrigger) {
-        setCountdown(3);
+        setCountdown(countdownDuration);
       }
 
     }
@@ -751,7 +790,7 @@ function CameraContent() {
     setShowPreview(false);
     
     if (autoAdvance) {
-      setCountdown(3);
+      setCountdown(countdownDuration);
     }
 
   };
@@ -796,8 +835,8 @@ function CameraContent() {
 
     if (countdown === null) return;
 
-    if (countdown === 3) {
-      // Start recording fresh at the beginning of countdown
+    if (countdown === countdownDuration) {
+      // Start recording fresh at the beginning of countdown (any duration: 3, 5, or 10)
       if (recorderRef.current && recorderRef.current.state === "inactive") {
         chunksRef.current = [];
         try {
@@ -814,7 +853,7 @@ function CameraContent() {
 
     return () => clearTimeout(t);
 
-  }, [countdown]);
+  }, [countdown, countdownDuration]);
 
 
 
@@ -944,7 +983,7 @@ function CameraContent() {
 
                  {/* Countdown Overlay */}
                  {countdown !== null && (
-                   <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30 backdrop-blur-sm">
+                   <div className="absolute inset-0 flex items-center justify-center z-30">
                      <span className={`${poppins.className} text-[8rem] lg:text-[12rem] text-white drop-shadow-2xl animate-ping font-black`}>{countdown}</span>
                    </div>
                  )}
@@ -967,7 +1006,7 @@ function CameraContent() {
                     </button>
 
                     <button
-                      onClick={() => { if (cameraReady && countdown === null && recorderRef.current?.state !== "recording") setCountdown(3); }}
+                      onClick={() => { if (cameraReady && countdown === null && recorderRef.current?.state !== "recording") setCountdown(countdownDuration); }}
                       className="w-20 h-20 rounded-full bg-white/90 backdrop-blur-md border-[6px] border-black flex items-center justify-center text-black shadow-2xl hover:scale-110 active:scale-95 transition-all group relative"
                     >
                       <div className="w-14 h-14 bg-black rounded-full flex items-center justify-center text-white transition-colors group-hover:bg-gray-800">
