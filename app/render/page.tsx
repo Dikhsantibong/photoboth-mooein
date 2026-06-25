@@ -552,15 +552,31 @@ function RenderContent() {
         router.push(`/print?kanvas=${canvasType}&template=${templateId}`);
       };
 
+      // ── Hitung durasi & boomerang berdasarkan countdown setting ──
+      const savedCountdownDuration = parseInt(localStorage.getItem("countdownDuration") || "3", 10);
+      const useBoomerang = savedCountdownDuration <= 5; // boomerang untuk 3 & 5 detik
+      const renderDurationMs = useBoomerang
+        ? savedCountdownDuration * 3 * 1000 // 3s→9s, 5s→15s
+        : savedCountdownDuration * 1000;     // 10s→10s
+
+      // Buat urutan foto boomerang: [0,1,2,3,2,1] untuk maju-mundur
+      const buildBoomerangSequence = (count: number): number[] => {
+        if (count <= 1) return [0];
+        const seq: number[] = [];
+        for (let i = 0; i < count; i++) seq.push(i);
+        for (let i = count - 2; i > 0; i--) seq.push(i);
+        return seq;
+      };
+
       const generateGifVideo = () => {
         if (photoElements.length === 0) {
           finishStaticImage();
           return;
         }
 
-        let options: any = { mimeType: 'video/webm' };
+        let options: any = { mimeType: 'video/webm', videoBitsPerSecond: 800000 };
         if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
-          options = { mimeType: 'video/webm; codecs=vp8' };
+          options = { mimeType: 'video/webm; codecs=vp8', videoBitsPerSecond: 800000 };
         }
 
         const gifCanvas = document.createElement('canvas');
@@ -572,7 +588,15 @@ function RenderContent() {
           return;
         }
 
-        const stream = gifCanvas.captureStream(30);
+        // Pre-draw sebelum captureStream agar tidak kosong
+        gifCtx.fillStyle = "#ffffff";
+        gifCtx.fillRect(0, 0, gifCanvas.width, gifCanvas.height);
+        if (photoElements[0]) {
+          gifCtx.drawImage(photoElements[0], 0, 0, gifCanvas.width, gifCanvas.height);
+        }
+
+        // Untuk GIF, framerate rendah (5 fps) sudah sangat cukup karena hanya foto statis yang berganti
+        const stream = gifCanvas.captureStream(5);
         const recorder = new MediaRecorder(stream, options);
         const chunks: BlobPart[] = [];
 
@@ -581,7 +605,10 @@ function RenderContent() {
         };
 
         recorder.onstop = async () => {
+          // Safeguard: tunggu sedikit agar semua chunks ter-flush
+          await new Promise(r => setTimeout(r, 200));
           const finalBlob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+          console.log(`[GIF] Final blob size: ${finalBlob.size} bytes, duration target: ${renderDurationMs}ms`);
           await localforage.setItem("finalGifVideo", finalBlob);
           finishStaticImage();
         };
@@ -589,8 +616,17 @@ function RenderContent() {
         recorder.start(100);
 
         const startTime = Date.now();
-        const duration = 6000; // 6 seconds
-        const frameDuration = 500; // change photo every 500ms
+        const duration = renderDurationMs;
+
+        // Bangun sequence foto: boomerang atau linear
+        const photoSequence = useBoomerang
+          ? buildBoomerangSequence(photoElements.length)
+          : Array.from({ length: photoElements.length }, (_, i) => i);
+
+        // Standar photobooth GIF: ~750ms per foto agar perpindahan terasa natural
+        const TARGET_FRAME_MS = 750;
+        const totalCycles = Math.max(1, Math.round(duration / (photoSequence.length * TARGET_FRAME_MS)));
+        const frameDuration = duration / (photoSequence.length * totalCycles);
 
         const renderGifLoop = () => {
           const elapsed = Date.now() - startTime;
@@ -598,18 +634,22 @@ function RenderContent() {
 
           if (elapsed > duration) {
             setLoadingProgress(100);
-            recorder.stop();
+            // Safeguard: pastikan recorder masih aktif sebelum stop
+            if (recorder.state === "recording") {
+              recorder.stop();
+            }
             return;
           }
 
-          const currentPhotoIndex = Math.floor(elapsed / frameDuration) % photoElements.length;
+          // Hitung index foto dari sequence boomerang
+          const seqIndex = Math.floor(elapsed / frameDuration) % photoSequence.length;
+          const currentPhotoIndex = photoSequence[seqIndex];
           const currentPhoto = photoElements[currentPhotoIndex];
 
           gifCtx.fillStyle = "#ffffff";
           gifCtx.fillRect(0, 0, gifCanvas.width, gifCanvas.height);
           
           if (currentPhoto) {
-            // Draw photo covering the canvas
             gifCtx.drawImage(currentPhoto, 0, 0, gifCanvas.width, gifCanvas.height);
           }
 
@@ -619,9 +659,9 @@ function RenderContent() {
       };
 
       if (videoElements.some(v => v.src)) {
-        let options: any = { mimeType: 'video/webm' };
+        let options: any = { mimeType: 'video/webm', videoBitsPerSecond: 1200000 }; // 1.2 Mbps
         if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
-          options = { mimeType: 'video/webm; codecs=vp8' };
+          options = { mimeType: 'video/webm; codecs=vp8', videoBitsPerSecond: 1200000 };
         }
 
         // Initial draw to prevent empty stream bug in Chromium
@@ -631,7 +671,8 @@ function RenderContent() {
           ctx.drawImage(baseImg, 0, 0);
         }
         
-        const stream = finalCanvas.captureStream(30);
+        // Turunkan framerate menjadi 20fps agar ukuran file tidak terlalu membengkak saat boomerang 15 detik
+        const stream = finalCanvas.captureStream(20);
         const recorder = new MediaRecorder(stream, options);
         const chunks: BlobPart[] = [];
 
@@ -648,6 +689,11 @@ function RenderContent() {
         };
 
         recorder.start(100);
+        
+        // Dapatkan durasi asli video untuk boomerang timing
+        const videoDurations = videoElements.map(v => v.duration || savedCountdownDuration);
+        const singlePassDuration = Math.max(...videoDurations) * 1000; // durasi 1x putar dalam ms
+        
         videoElements.forEach(v => {
           if (v.src) {
             v.currentTime = 0;
@@ -656,7 +702,9 @@ function RenderContent() {
         });
 
         const startTime = Date.now();
-        const duration = 6000;
+        // Durasi live video menyesuaikan countdown: 3s→9s(boomerang), 5s→15s(boomerang), 10s→10s
+        const duration = renderDurationMs;
+
 
         const renderLoop = () => {
           const elapsed = Date.now() - startTime;
@@ -664,8 +712,28 @@ function RenderContent() {
 
           if (elapsed > duration) {
             setLoadingProgress(100);
-            recorder.stop();
+            if (recorder.state === "recording") {
+              recorder.stop();
+            }
             return;
+          }
+
+          // Boomerang: kontrol currentTime secara manual
+          if (useBoomerang && singlePassDuration > 0) {
+            const cyclePos = elapsed % (singlePassDuration * 2); // 1 cycle = maju + mundur
+            const isReverse = cyclePos >= singlePassDuration;
+            const timeInCycle = isReverse 
+              ? (singlePassDuration * 2 - cyclePos) / 1000 
+              : cyclePos / 1000;
+            
+            videoElements.forEach(v => {
+              if (v.src && v.duration) {
+                const clampedTime = Math.min(Math.max(0, timeInCycle), v.duration - 0.01);
+                // Pause video agar kita bisa kontrol currentTime manual
+                if (!v.paused) v.pause();
+                v.currentTime = clampedTime;
+              }
+            });
           }
 
           // 1. Gambar Base Statis (untuk background dan pinggiran aslinya)

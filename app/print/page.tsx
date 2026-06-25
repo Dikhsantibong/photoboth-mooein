@@ -738,9 +738,29 @@ function PrintContent() {
 
   useEffect(() => {
     if (previewMode === "gif" && rawPhotos.length > 0) {
+      // Buat sequence boomerang: [0,1,2,3,2,1] untuk efek maju-mundur
+      const buildBoomerangSeq = (count: number): number[] => {
+        if (count <= 1) return [0];
+        const seq: number[] = [];
+        for (let i = 0; i < count; i++) seq.push(i);
+        for (let i = count - 2; i > 0; i--) seq.push(i);
+        return seq;
+      };
+      
+      const savedCountdown = parseInt(localStorage.getItem("countdownDuration") || "3", 10);
+      const useBoomerang = savedCountdown <= 5;
+      const sequence = useBoomerang 
+        ? buildBoomerangSeq(rawPhotos.length) 
+        : Array.from({ length: rawPhotos.length }, (_, i) => i);
+      
+      // Standar photobooth GIF: ~750ms per foto agar perpindahan terasa natural
+      const clampedFrameDuration = 750;
+      
+      let seqIndex = 0;
       const interval = setInterval(() => {
-        setCurrentGifIndex((prev) => (prev + 1) % rawPhotos.length);
-      }, 500);
+        seqIndex = (seqIndex + 1) % sequence.length;
+        setCurrentGifIndex(sequence[seqIndex]);
+      }, clampedFrameDuration);
       return () => clearInterval(interval);
     }
   }, [previewMode, rawPhotos]);

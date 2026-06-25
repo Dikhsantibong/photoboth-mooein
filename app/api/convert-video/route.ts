@@ -63,11 +63,11 @@ export async function POST(req: Request) {
       "-i", inputPath,
       "-c:v", "libx264",
       "-preset", "ultrafast",
-      "-crf", "28",
+      "-crf", "32", // Tingkatkan kompresi agar MP4 tidak terlalu besar
       "-pix_fmt", "yuv420p",
       "-movflags", "+faststart",
       "-an",
-      "-vf", "scale='min(iw,720)':-2",
+      "-vf", "scale='min(iw,640)':-2", // Resize sedikit lebih kecil untuk mengurangi size
       outputPath
     ]
     

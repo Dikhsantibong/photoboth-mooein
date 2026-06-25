@@ -62,6 +62,12 @@ function FlipbookCameraContent() {
 
   const videoChunksRef = useRef<BlobPart[]>([]);
 
+  const liveViewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const digiCamLoopRef = useRef<number | null>(null);
+  const [streamReady, setStreamReady] = useState(0);
+  const [isDigiCamLive, setIsDigiCamLive] = useState(false);
+  const [liveViewUrl, setLiveViewUrl] = useState<string>("");
+
 
 
   // Stage flow
@@ -84,6 +90,9 @@ function FlipbookCameraContent() {
     if (savedBg) {
       setCustomBgImage(savedBg);
     }
+    
+    const digiCamStatus = localStorage.getItem("digiCamLiveView") === "true";
+    setIsDigiCamLive(digiCamStatus);
   }, []);
 
 
@@ -207,55 +216,100 @@ function FlipbookCameraContent() {
   // ── Camera ─────────────────────────────────────────────────
 
   const startCamera = useCallback(async () => {
+    const initStream = (stream: MediaStream) => {
+      streamRef.current = stream;
+      setStreamReady(Date.now()); // Force re-render instantly
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          setCameraReady(true);
+          videoRef.current?.play().catch(() => {});
+        };
+      }
+    };
 
     try {
+      const digiCamLiveMode = localStorage.getItem("digiCamLiveView") === "true";
 
-      const preferredCameraId = localStorage.getItem("preferredCameraId");
+      if (digiCamLiveMode) {
+        console.log("[Flipbook] Memulai Live View DSLR (Polling)...");
+        let isRunning = true;
+        const liveCanvas = liveViewCanvasRef.current;
+        (window as any)._stopDigiCamLoopFlipbook = () => { isRunning = false; };
+        
+        const loop = async () => {
+          if (!isRunning) return;
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2000);
+            const res = await fetch(`/api/camera/liveview?t=${Date.now()}`, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            
+            if (res.ok) {
+              const blob = await res.blob();
+              if (blob.size > 500) {
+                const url = URL.createObjectURL(blob);
+                setLiveViewUrl(old => {
+                  if (old) URL.revokeObjectURL(old);
+                  return url;
+                });
+                
+                if (liveCanvas) {
+                  const img = new Image();
+                  img.onload = () => {
+                    if (!isRunning || !liveCanvas) return;
+                    liveCanvas.width = img.width;
+                    liveCanvas.height = img.height;
+                    liveCanvas.getContext('2d')?.drawImage(img, 0, 0);
+                    
+                    if (!streamRef.current) {
+                      const stream = liveCanvas.captureStream(30);
+                      initStream(stream);
+                    }
+                  };
+                  img.src = url;
+                }
+              }
+            }
+          } catch (e) {
+          }
+          
+          if (isRunning) {
+            digiCamLoopRef.current = setTimeout(loop, 60) as unknown as number; // ~16 FPS
+          }
+        };
+        
+        loop();
 
-      const constraints: MediaStreamConstraints = {
-
-        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16/9 }, ...(preferredCameraId ? { deviceId: preferredCameraId } : {}) },
-
-        audio: false,
-
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-
-        videoRef.current.srcObject = stream;
-
-        videoRef.current.onloadedmetadata = () => { videoRef.current?.play().catch(() => {}); setCameraReady(true); };
-
+      } else {
+        const preferredCameraId = localStorage.getItem("preferredCameraId");
+        const constraints: MediaStreamConstraints = {
+          video: { width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16/9 }, ...(preferredCameraId && preferredCameraId !== "USB Video" ? { deviceId: { exact: preferredCameraId } } : {}) },
+          audio: false,
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        initStream(stream);
       }
 
     } catch (e) {
-
       try {
-
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-
-        streamRef.current = stream;
-
-        if (videoRef.current) { videoRef.current.srcObject = stream; setCameraReady(true); }
-
+        initStream(stream);
       } catch (err) { console.error(err); }
-
     }
-
   }, []);
 
 
 
   const stopCamera = useCallback(() => {
-
     streamRef.current?.getTracks().forEach((t) => t.stop());
-
     streamRef.current = null;
-
+    if ((window as any)._stopDigiCamLoopFlipbook) {
+      (window as any)._stopDigiCamLoopFlipbook();
+    }
+    if (digiCamLoopRef.current) {
+      clearTimeout(digiCamLoopRef.current);
+    }
   }, []);
 
 
@@ -354,32 +408,73 @@ function FlipbookCameraContent() {
 
 
 
-  const captureCoverPhoto = () => {
-
+  const captureCoverPhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return;
+    
+    setFlashActive(true); 
+    setTimeout(() => setFlashActive(false), 150);
 
+    const nativeDslrEnabled = localStorage.getItem("nativeDslrCapture") === "true";
+    let nativePhotoImg: HTMLImageElement | null = null;
+
+    if (nativeDslrEnabled) {
+      try {
+        const res = await fetch('/api/camera/capture', { method: 'POST' });
+        const json = await res.json();
+        if (json.success && json.photoUrl) {
+          nativePhotoImg = new Image();
+          await new Promise((resolve, reject) => {
+            if (!nativePhotoImg) return reject();
+            nativePhotoImg.onload = resolve;
+            nativePhotoImg.onerror = () => {
+              nativePhotoImg = null;
+              resolve(null); 
+            };
+            nativePhotoImg.src = json.photoUrl;
+          });
+        }
+      } catch (err) {
+      }
+    }
+
+    const liveCanvas = liveViewCanvasRef.current;
+    const video = videoRef.current;
     const canvas = canvasRef.current;
 
-    canvas.width = videoRef.current.videoWidth;
+    let sourceW = 0;
+    let sourceH = 0;
+    let drawableSource: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null = null;
 
-    canvas.height = videoRef.current.videoHeight;
+    if (nativePhotoImg && nativePhotoImg.width > 0 && nativePhotoImg.height > 0) {
+      sourceW = nativePhotoImg.width;
+      sourceH = nativePhotoImg.height;
+      drawableSource = nativePhotoImg;
+    } else if (isDigiCamLive && liveCanvas && liveCanvas.width > 0 && liveCanvas.height > 0) {
+      sourceW = liveCanvas.width;
+      sourceH = liveCanvas.height;
+      drawableSource = liveCanvas;
+    } else if (video.videoWidth > 0 && video.videoHeight > 0) {
+      sourceW = video.videoWidth;
+      sourceH = video.videoHeight;
+      drawableSource = video;
+    }
+
+    if (!sourceW || !sourceH || !drawableSource) return;
+
+    canvas.width = sourceW;
+    canvas.height = sourceH;
 
     const ctx = canvas.getContext("2d");
-
     if (!ctx) return;
-
-    ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
-
-    ctx.drawImage(videoRef.current, 0, 0);
-
+    
+    // Reverse scale behavior like original flipbook setup
+    ctx.translate(canvas.width, 0); 
+    ctx.scale(-1, 1);
+    ctx.drawImage(drawableSource, 0, 0, canvas.width, canvas.height);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     setCoverPhoto(canvas.toDataURL("image/jpeg", 0.95));
-
-    setFlashActive(true); setTimeout(() => setFlashActive(false), 150);
-
     setShowCoverPreview(true);
-
   };
 
 
@@ -956,7 +1051,41 @@ function FlipbookCameraContent() {
 
               <div className="absolute inset-0 bg-slate-900 overflow-hidden">
 
-                <video ref={videoRef} autoPlay playsInline muted className={`absolute inset-0 w-full h-full transition-opacity ${showCoverPreview || showVideoPreview ? "opacity-0" : "opacity-100"}`} style={{ objectFit: 'cover', transform: 'scaleX(-1)', filter: getFilterStyle() }} />
+                {/* Hidden sources for capturing */}
+                <div className="absolute opacity-0 pointer-events-none w-[1px] h-[1px] overflow-hidden">
+                  <video ref={videoRef} autoPlay playsInline muted />
+                  <canvas ref={liveViewCanvasRef} />
+                </div>
+
+                <div className={`absolute inset-0 w-full h-full transition-opacity ${showCoverPreview || showVideoPreview ? "opacity-0" : "opacity-100"}`}>
+                  {isDigiCamLive ? (
+                    liveViewUrl ? (
+                      <img
+                        src={liveViewUrl}
+                        className="w-full h-full"
+                        style={{ objectFit: 'contain', transform: 'scaleX(-1)', filter: getFilterStyle() }}
+                        alt="Live View"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center w-full h-full">
+                        <div className="animate-pulse text-slate-400 text-sm font-medium">Menghubungkan DSLR...</div>
+                      </div>
+                    )
+                  ) : (
+                    <video
+                      key={`video-stream-${streamReady}`}
+                      autoPlay playsInline muted
+                      className="w-full h-full"
+                      style={{ objectFit: 'cover', transform: 'scaleX(-1)', filter: getFilterStyle() }}
+                      ref={(el) => {
+                        if (el && streamRef.current && el.srcObject !== streamRef.current) {
+                          el.srcObject = streamRef.current;
+                          el.play().catch(() => {});
+                        }
+                      }}
+                    />
+                  )}
+                </div>
 
                 {showCoverPreview && coverPhoto && <img src={coverPhoto} className="absolute inset-0 w-full h-full object-cover z-10" style={{ filter: getFilterStyle(coverEdit) }} alt="Cover" />}
 
