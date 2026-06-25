@@ -44,7 +44,14 @@ export default function SettingsPage() {
   const [autoAdvanceCountdown, setAutoAdvanceCountdown] = useState<boolean>(false);
   const [gestureDetection, setGestureDetection] = useState<boolean>(false);
   const [countdownDuration, setCountdownDuration] = useState<number>(3);
-  const [activeTab, setActiveTab] = useState<"api" | "hardware" | "display" | "features" | "session">("api");
+  const [activeTab, setActiveTab] = useState<"api" | "hardware" | "display" | "features" | "session" | "reprint">("api");
+
+  // Reprint state
+  const [recentImages, setRecentImages] = useState<any[]>([]);
+  const [isFetchingImages, setIsFetchingImages] = useState(false);
+  const [printQtys, setPrintQtys] = useState<Record<number, number>>({});
+  const [isPrintingId, setIsPrintingId] = useState<number | null>(null);
+
 
   // Queue state
   const [uploadQueue, setUploadQueue] = useState<any[]>([]);
@@ -78,17 +85,84 @@ export default function SettingsPage() {
   const fetchQueue = async () => {
     try {
       const keysRaw = await localforage.getItem<string[]>("offline_upload_keys");
-      const keys = keysRaw || [];
-      const queueItems = [];
-      for (const key of keys) {
-        const item = await localforage.getItem<any>(key);
-        if (item) queueItems.push({ key, ...item });
+      if (!keysRaw) return;
+      const tasks = [];
+      for (const k of keysRaw) {
+        const item = await localforage.getItem<any>(k);
+        if (item) {
+          tasks.push({ key: k, ...item });
+        }
       }
-      setUploadQueue(queueItems);
+      setUploadQueue(tasks);
     } catch (e) {
       console.error("Failed to fetch queue", e);
     }
   };
+
+  const fetchRecentImages = async () => {
+    setIsFetchingImages(true);
+    try {
+      const res = await fetch("/api/recent-images");
+      const data = await res.json();
+      if (data.success && data.data) {
+        setRecentImages(data.data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch recent images:", e);
+    } finally {
+      setIsFetchingImages(false);
+    }
+  };
+
+  const handleReprint = async (image: any) => {
+    if (isPrintingId) return;
+    const qty = printQtys[image.id] || 1;
+    setIsPrintingId(image.id);
+    try {
+      const imgRes = await fetch(image.image_url);
+      const blob = await imgRes.blob();
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      const standardPrinter = localStorage.getItem("preferredPrinterName") || "";
+      const orientation = localStorage.getItem("printerOrientation") || "landscape";
+      
+      const response = await fetch(`/api/final-images/${image.transaction_id || 0}/print`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount_print: 0,
+          print_quantity: qty,
+          printer_name: standardPrinter,
+          printer_orientation: orientation,
+          image_data: base64Data,
+          copies: qty,
+          print_size: "4R"
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert("Selesai! Foto sedang dicetak.");
+      } else {
+        alert("Gagal mencetak: " + (data.message || "Error"));
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Terjadi kesalahan saat mencoba mencetak.");
+    } finally {
+      setIsPrintingId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'reprint') {
+      fetchRecentImages();
+    }
+  }, [activeTab]);
 
   const handleClearQueue = async () => {
     if (!confirm("Apakah Anda yakin ingin menghapus semua antrean upload? Transaksi yang belum terupload tidak akan masuk ke server.")) return;
@@ -439,6 +513,12 @@ export default function SettingsPage() {
                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                  </div>
                  Sistem & Antrean
+               </button>
+               <button onClick={() => setActiveTab('reprint')} className={`text-left px-5 py-4 rounded-2xl font-bold flex items-center gap-3 transition-all shrink-0 ${activeTab === 'reprint' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-100'}`}>
+                 <div className={`p-2 rounded-xl ${activeTab === 'reprint' ? 'bg-white/20' : 'bg-amber-100 text-amber-600'}`}>
+                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+                 </div>
+                 Riwayat Cetak
                </button>
             </div>
 
@@ -988,7 +1068,58 @@ export default function SettingsPage() {
                      </div>
                    </section>
                  </div>
+               {activeTab === 'reprint' && (
+                 <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300 max-w-4xl">
+                   <section className="space-y-5">
+                     <div className="flex items-center justify-between mb-4">
+                       <h2 className="text-2xl font-black text-slate-800 tracking-tight">Riwayat Cetak (5 Terakhir)</h2>
+                       <button onClick={fetchRecentImages} className="text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold transition-colors">
+                         Refresh
+                       </button>
+                     </div>
+                     {isFetchingImages ? (
+                       <div className="py-10 flex justify-center"><div className="h-8 w-8 rounded-full border-[3px] border-slate-200 border-t-amber-500 animate-spin" /></div>
+                     ) : recentImages.length === 0 ? (
+                       <div className="py-10 text-center text-slate-500 font-medium bg-white rounded-2xl border border-slate-100 p-8">Belum ada riwayat cetak yang ditemukan.</div>
+                     ) : (
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         {recentImages.map((img) => (
+                           <div key={img.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all hover:border-slate-300 hover:shadow-md">
+                             <div className="h-48 bg-slate-100 relative">
+                               <img src={img.image_url} alt="Recent Print" className="w-full h-full object-contain" />
+                             </div>
+                             <div className="p-4 flex items-center justify-between gap-4">
+                               <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
+                                 <label className="text-xs font-bold text-slate-500 uppercase">Qty:</label>
+                                 <input 
+                                    type="number" 
+                                    min="1" 
+                                    max="10" 
+                                    className="w-12 bg-transparent text-center font-bold text-slate-700 outline-none" 
+                                    value={printQtys[img.id] || 1} 
+                                    onFocus={() => onInputFocus(`qty_${img.id}`, (printQtys[img.id] || 1).toString())}
+                                    onChange={(e) => {
+                                      setPrintQtys({...printQtys, [img.id]: parseInt(e.target.value) || 1});
+                                      if (keyboardRef.current && focusedInput === `qty_${img.id}`) keyboardRef.current.setInput(e.target.value);
+                                    }} 
+                                  />
+                               </div>
+                               <button 
+                                 onClick={() => handleReprint(img)}
+                                 disabled={isPrintingId === img.id}
+                                 className="flex-1 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white font-bold py-2.5 px-4 rounded-xl transition-colors text-sm shadow-md shadow-amber-500/20"
+                               >
+                                 {isPrintingId === img.id ? "Mencetak..." : "Cetak Sekarang"}
+                               </button>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     )}
+                   </section>
+                 </div>
                )}
+
             </div>
 
           </div>
