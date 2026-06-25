@@ -601,6 +601,7 @@ function PembayaranContent() {
           </div>
 
           <div className="mx-auto flex w-full max-w-3xl flex-col items-center justify-center gap-4 sm:gap-5 landscape:flex-row landscape:items-stretch">
+            {enableQris && (
             <button
               type="button"
               onClick={() => setIsQrisModalOpen(true)}
@@ -630,6 +631,7 @@ function PembayaranContent() {
                 </svg>
               </div>
             </button>
+            )}
 
             <button
               type="button"

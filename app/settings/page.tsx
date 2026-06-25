@@ -994,7 +994,11 @@ export default function SettingsPage() {
                          <span className="text-[11px] text-slate-400">Tampilkan pilihan bayar dengan QRIS/Midtrans</span>
                        </div>
                        <button
-                         onClick={() => setEnableQris(!enableQris)}
+                         onClick={() => {
+                           const newVal = !enableQris;
+                           setEnableQris(newVal);
+                           localStorage.setItem("enableQris", newVal ? "true" : "false");
+                         }}
                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${enableQris ? 'bg-indigo-600' : 'bg-slate-200'}`}
                        >
                          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${enableQris ? 'translate-x-5' : 'translate-x-0'}`} />
