@@ -199,8 +199,7 @@ function PrintContent() {
   const [timeLeft, setTimeLeft] = useState(300);
   const [pendingPrintQty, setPendingPrintQty] = useState(1);
   const [pendingPrintAmount, setPendingPrintAmount] = useState(0);
-  const [customBgImage, setCustomBgImage] = useState<string>("");
-
+  const [enableQris, setEnableQris] = useState<boolean>(true);
   const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
   const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
   const [voucherCode, setVoucherCode] = useState("");
@@ -223,9 +222,13 @@ function PrintContent() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [autoRedirectCountdown, setAutoRedirectCountdown] = useState<number | null>(null);
   const autoRedirectRef = useRef<NodeJS.Timeout | null>(null);
+  const [customBgImage, setCustomBgImage] = useState<string>("");
 
   // ── Load Data ──────────────────────────
   useEffect(() => {
+    const savedQris = localStorage.getItem("enableQris");
+    if (savedQris !== null) setEnableQris(savedQris === "true");
+
     const loadData = async () => {
       const img = localStorage.getItem("finalRenderImage");
       const pricingRaw = localStorage.getItem("paymentGateway");
@@ -281,8 +284,8 @@ function PrintContent() {
       // Convert video blob to base64 for the API
       if (videoBlob) {
         try {
-          const arrayBuffer = await videoBlob.arrayBuffer();
-          const uint8 = new Uint8Array(arrayBuffer);
+          const arrayBuffer = videoBlob.arrayBuffer();
+          const uint8 = new Uint8Array(await arrayBuffer);
           let binary = '';
           for (let i = 0; i < uint8.length; i++) {
             binary += String.fromCharCode(uint8[i]);
@@ -1052,18 +1055,20 @@ function PrintContent() {
           <div className="w-full max-w-lg animate-in zoom-in-95 rounded-[3rem] bg-white p-8 shadow-2xl duration-300 flex flex-col gap-4">
             <h2 className="text-center text-2xl font-black text-slate-800 mb-4 uppercase tracking-widest">Metode Pembayaran</h2>
             <div className="flex flex-col sm:flex-row gap-4 w-full">
-              <button
-                onClick={() => {
-                  setIsPaymentMethodModalOpen(false);
-                  handleExtraPrintPayment(pendingPrintAmount, pendingPrintQty, selectedPrintSize);
-                }}
-                className="flex-1 flex flex-col items-center justify-center rounded-2xl border-2 border-slate-200 bg-slate-50 p-6 hover:bg-slate-100 hover:border-slate-300 transition-all"
-              >
-                <div className="w-16 h-16 mb-4 flex items-center justify-center rounded-full bg-orange-100 text-orange-500">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="5" height="5" x="3" y="3" rx="1" /><rect width="5" height="5" x="16" y="3" rx="1" /><rect width="5" height="5" x="3" y="16" rx="1" /><path d="M21 16h-3a2 2 0 0 0-2 2v3" /><path d="M21 21v.01" /><path d="M12 7v3a2 2 0 0 1-2 2H7" /><path d="M3 12h.01" /><path d="M12 3h.01" /><path d="M12 16v.01" /><path d="M16 12h1" /><path d="M21 12v.01" /><path d="M12 21v-1" /></svg>
-                </div>
-                <span className="font-black text-slate-700 uppercase">QRIS</span>
-              </button>
+              {enableQris && (
+                <button
+                  onClick={() => {
+                    setIsPaymentMethodModalOpen(false);
+                    handleExtraPrintPayment(pendingPrintAmount, pendingPrintQty, selectedPrintSize);
+                  }}
+                  className="flex-1 flex flex-col items-center justify-center rounded-2xl border-2 border-slate-200 bg-slate-50 p-6 hover:bg-slate-100 hover:border-slate-300 transition-all"
+                >
+                  <div className="w-16 h-16 mb-4 flex items-center justify-center rounded-full bg-orange-100 text-orange-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="5" height="5" x="3" y="3" rx="1" /><rect width="5" height="5" x="16" y="3" rx="1" /><rect width="5" height="5" x="3" y="16" rx="1" /><path d="M21 16h-3a2 2 0 0 0-2 2v3" /><path d="M21 21v.01" /><path d="M12 7v3a2 2 0 0 1-2 2H7" /><path d="M3 12h.01" /><path d="M12 3h.01" /><path d="M12 16v.01" /><path d="M16 12h1" /><path d="M21 12v.01" /><path d="M12 21v-1" /></svg>
+                  </div>
+                  <span className="font-black text-slate-700 uppercase">QRIS</span>
+                </button>
+              )}
               
               <button
                 onClick={() => {

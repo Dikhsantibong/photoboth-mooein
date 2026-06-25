@@ -45,6 +45,7 @@ export default function SettingsPage() {
   const [autoAdvanceCountdown, setAutoAdvanceCountdown] = useState<boolean>(false);
   const [gestureDetection, setGestureDetection] = useState<boolean>(false);
   const [countdownDuration, setCountdownDuration] = useState<number>(3);
+  const [enableQris, setEnableQris] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<"api" | "hardware" | "display" | "features" | "session" | "reprint">("api");
 
   // Reprint state
@@ -262,6 +263,9 @@ export default function SettingsPage() {
       const savedCountdown = localStorage.getItem("countdownDuration");
       if (savedCountdown) setCountdownDuration(parseInt(savedCountdown, 10));
 
+      const savedQris = localStorage.getItem("enableQris");
+      if (savedQris !== null) setEnableQris(savedQris === "true");
+
     } catch (err) {
       console.error("Hardware fetch err:", err);
     }
@@ -347,6 +351,7 @@ export default function SettingsPage() {
     localStorage.setItem("autoAdvanceCountdown", autoAdvanceCountdown ? "true" : "false");
     localStorage.setItem("gestureDetection", gestureDetection ? "true" : "false");
     localStorage.setItem("countdownDuration", countdownDuration.toString());
+    localStorage.setItem("enableQris", enableQris ? "true" : "false");
     showToast("Pengaturan Hardware & Fitur disimpan!", "success");
   };
 
@@ -983,7 +988,20 @@ export default function SettingsPage() {
                        <h2 className="text-2xl font-black text-slate-800 tracking-tight">Sesi Foto</h2>
                      </div>
 
-                     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 transition-all hover:border-slate-200 hover:shadow-md">
+                     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-6 p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                       <div className="flex flex-col">
+                         <span className="text-sm font-bold text-slate-700">Metode Pembayaran QRIS</span>
+                         <span className="text-[11px] text-slate-400">Tampilkan pilihan bayar dengan QRIS/Midtrans</span>
+                       </div>
+                       <button
+                         onClick={() => setEnableQris(!enableQris)}
+                         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${enableQris ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                       >
+                         <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${enableQris ? 'translate-x-5' : 'translate-x-0'}`} />
+                       </button>
+                     </div>
+
+                     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 transition-all hover:border-slate-200 hover:shadow-md mb-6">
                        <div className="flex items-start gap-4">
                          <div className="p-2.5 bg-rose-50 text-rose-500 rounded-xl shrink-0 mt-0.5">
                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>

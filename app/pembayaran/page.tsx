@@ -198,6 +198,7 @@ function PembayaranContent() {
   const [showVoucherKeyboard, setShowVoucherKeyboard] = useState(false);
   const [appliedVoucherId, setAppliedVoucherId] = useState<number | null>(null);
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
+  const [enableQris, setEnableQris] = useState<boolean>(true);
   const keyboardRef = useRef<any>(null);
   const [customBgImage, setCustomBgImage] = useState<string>("");
 
@@ -206,6 +207,11 @@ function PembayaranContent() {
     if (savedBg) {
       setCustomBgImage(savedBg);
     }
+  }, []);
+
+  useEffect(() => {
+    const savedQris = localStorage.getItem("enableQris");
+    if (savedQris !== null) setEnableQris(savedQris === "true");
   }, []);
 
   // Background QRIS states
@@ -286,7 +292,7 @@ function PembayaranContent() {
 
   // 1. Generate QRIS Immediately on Background Mount
   useEffect(() => {
-    if (basePrice <= 0) return;
+    if (basePrice <= 0 || !enableQris) return;
 
     let mounted = true;
     const generateQris = async () => {
