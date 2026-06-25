@@ -60,6 +60,7 @@ const port = 3000;
 
 let nextApp;
 let nextHandler;
+let mainWindow;
 
 function createWindow() {
   const preloadPath = path.join(__dirname, 'preload.js');
@@ -69,7 +70,7 @@ function createWindow() {
     console.error(`> ERROR: Preload script NOT FOUND at ${preloadPath}`);
   }
 
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
@@ -83,7 +84,7 @@ function createWindow() {
   });
 
   // Memuat server Next.js (baik dev maupun prod)
-  win.loadURL(`http://${hostname}:${port}`);
+  mainWindow.loadURL(`http://${hostname}:${port}`);
 
   // Opsional: Buka DevTools secara otomatis
   // if (dev) win.webContents.openDevTools();
@@ -99,6 +100,11 @@ ipcMain.on('restart-app', () => {
 ipcMain.on('close-app', () => {
   console.log('> Closing app...');
   app.quit();
+});
+
+ipcMain.on('install-update', () => {
+  console.log('> Installing update...');
+  autoUpdater.quitAndInstall();
 });
 
 app.whenReady().then(async () => {
@@ -165,13 +171,42 @@ app.on('window-all-closed', () => {
 });
 
 // ── AutoUpdater Events ────────────────────────────────────
-autoUpdater.on('update-available', () => {
-  console.log('> Update available.');
+
+function sendUpdateMessage(type, data) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('updater-message', { type, data });
+  }
+}
+
+autoUpdater.on('checking-for-update', () => {
+  console.log('> Checking for update...');
+  sendUpdateMessage('checking-for-update');
 });
 
-autoUpdater.on('update-downloaded', () => {
-  console.log('> Update downloaded. Quitting and installing...');
-  // Untuk photobooth, mungkin lebih baik tunggu sampai tidak ada aktivitas sebelum restart
-  // Tapi untuk saat ini kita auto-restart agar terupdate.
-  autoUpdater.quitAndInstall();
+autoUpdater.on('update-available', (info) => {
+  console.log('> Update available:', info);
+  sendUpdateMessage('update-available', info);
+});
+
+autoUpdater.on('update-not-available', (info) => {
+  console.log('> Update not available.');
+  sendUpdateMessage('update-not-available', info);
+});
+
+autoUpdater.on('error', (err) => {
+  console.error('> AutoUpdater Error:', err);
+  sendUpdateMessage('error', err?.message || 'Unknown error');
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+  let log_message = "Download speed: " + progressObj.bytesPerSecond;
+  log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
+  log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
+  console.log(log_message);
+  sendUpdateMessage('download-progress', progressObj);
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  console.log('> Update downloaded. Ready to install.');
+  sendUpdateMessage('update-downloaded', info);
 });

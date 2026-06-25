@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import localforage from "localforage";
 import dynamic from "next/dynamic";
 import "react-simple-keyboard/build/css/index.css";
+import AutoUpdaterUI from "../components/AutoUpdaterUI";
 
 const Keyboard = dynamic(() => import("react-simple-keyboard"), { ssr: false });
 
@@ -1068,6 +1069,7 @@ export default function SettingsPage() {
                      </div>
                    </section>
                  </div>
+               )}
                {activeTab === 'reprint' && (
                  <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300 max-w-4xl">
                    <section className="space-y-5">
@@ -1125,6 +1127,8 @@ export default function SettingsPage() {
           </div>
         )}
       </main>
+
+      <AutoUpdaterUI />
 
       {/* Virtual Keyboard */}
       <div 
