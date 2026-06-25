@@ -1,6 +1,6 @@
 {
   "name": "my-app",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "main": "main.js",
   "author": "RoamBooth",
@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder --publish always"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.6",
@@ -50,7 +50,8 @@
     "productName": "RoamBooth Machine",
     "publish": [
       {
-        "provider": "github"
+        "provider": "github",
+        "releaseType": "release"
       }
     ],
     "directories": {

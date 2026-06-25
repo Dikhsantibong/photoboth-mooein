@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
 
 jobs:
   release:
@@ -27,7 +25,10 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Build and Publish Release
-        run: npm run dist
+      - name: Build Next.js
+        run: npm run build
+
+      - name: Build Electron and Publish Release
+        run: npx electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
