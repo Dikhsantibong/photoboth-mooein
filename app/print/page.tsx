@@ -749,10 +749,10 @@ function PrintContent() {
     } else if (timeLeft === 0) setQrisState("error");
   }, [qrisState, timeLeft]);
 
-  // ── Auto-redirect to home after 15s when upload is done ──
+  // ── Auto-redirect to home after 5 mins when upload is done ──
   useEffect(() => {
     if (uploadStage === "success") {
-      setAutoRedirectCountdown(120);
+      setAutoRedirectCountdown(300);
       const interval = setInterval(() => {
         setAutoRedirectCountdown((prev) => {
           if (prev === null || prev <= 1) {
