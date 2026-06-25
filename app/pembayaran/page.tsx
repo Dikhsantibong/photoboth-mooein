@@ -605,7 +605,7 @@ function PembayaranContent() {
             <button
               type="button"
               onClick={() => setIsQrisModalOpen(true)}
-              className="relative flex w-full min-w-0 flex-col rounded-2xl bg-white border-2 border-black p-5 text-left shadow-lg transition-[outline-color] duration-200 sm:p-8 landscape:aspect-square landscape:max-w-none landscape:flex-1 max-w-[400px] outline-2 outline-offset-4 outline-transparent hover:outline-black/50"
+              className={`relative flex w-full min-w-0 flex-col rounded-2xl bg-white border-2 border-black p-5 text-left shadow-lg transition-[outline-color] duration-200 sm:p-8 landscape:aspect-square max-w-[400px] outline-2 outline-offset-4 outline-transparent hover:outline-black/50 ${enableQris ? 'landscape:max-w-none landscape:flex-1' : ''}`}
             >
               <div className="flex min-h-0 flex-1 items-center justify-center text-black">
                 {qrisIcon}
@@ -636,7 +636,7 @@ function PembayaranContent() {
             <button
               type="button"
               onClick={() => setIsVoucherModalOpen(true)}
-              className="relative flex w-full min-w-0 flex-col rounded-2xl bg-white border-2 border-black p-5 text-left shadow-lg transition-[outline-color] duration-200 sm:p-8 landscape:aspect-square landscape:max-w-none landscape:flex-1 max-w-[400px] outline-2 outline-offset-4 outline-transparent hover:outline-black/50"
+              className={`relative flex w-full min-w-0 flex-col rounded-2xl bg-white border-2 border-black p-5 text-left shadow-lg transition-[outline-color] duration-200 sm:p-8 landscape:aspect-square max-w-[400px] outline-2 outline-offset-4 outline-transparent hover:outline-black/50 ${enableQris ? 'landscape:max-w-none landscape:flex-1' : ''}`}
             >
               <div className="flex min-h-0 flex-1 items-center justify-center text-black">
                 {voucherIcon}

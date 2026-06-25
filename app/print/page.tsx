@@ -1075,7 +1075,7 @@ function PrintContent() {
                   setIsPaymentMethodModalOpen(false);
                   setIsVoucherModalOpen(true);
                 }}
-                className="flex-1 flex flex-col items-center justify-center rounded-2xl border-2 border-slate-200 bg-slate-50 p-6 hover:bg-slate-100 hover:border-slate-300 transition-all"
+                className={`flex flex-col items-center justify-center rounded-2xl border-2 border-slate-200 bg-slate-50 p-6 hover:bg-slate-100 hover:border-slate-300 transition-all ${enableQris ? 'flex-1' : 'w-full max-w-[240px] mx-auto'}`}
               >
                 <div className="w-16 h-16 mb-4 flex items-center justify-center rounded-full bg-blue-100 text-blue-500">
                   <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 12H16c-.7 2-2 3-4 3s-3.3-1-4-3H2.5" /><path d="M5.5 5.1L2 12v6c0 1.1.9 2 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z" /></svg>
