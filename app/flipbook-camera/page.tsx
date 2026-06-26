@@ -237,6 +237,25 @@ function FlipbookCameraContent() {
         const liveCanvas = liveViewCanvasRef.current;
         (window as any)._stopDigiCamLoopFlipbook = () => { isRunning = false; };
         
+        let latestImg: HTMLImageElement | null = null;
+        
+        // Render loop untuk memaksa canvas update 60fps agar captureStream(30) stabil
+        const renderCanvasLoop = () => {
+          if (!isRunning) return;
+          if (liveCanvas && latestImg && latestImg.width > 0) {
+            liveCanvas.width = latestImg.width;
+            liveCanvas.height = latestImg.height;
+            liveCanvas.getContext('2d')?.drawImage(latestImg, 0, 0);
+            
+            if (!streamRef.current) {
+              const stream = liveCanvas.captureStream(30);
+              initStream(stream);
+            }
+          }
+          if (isRunning) requestAnimationFrame(renderCanvasLoop);
+        };
+        requestAnimationFrame(renderCanvasLoop);
+        
         const loop = async () => {
           if (!isRunning) return;
           try {
@@ -254,28 +273,18 @@ function FlipbookCameraContent() {
                   return url;
                 });
                 
-                if (liveCanvas) {
-                  const img = new Image();
-                  img.onload = () => {
-                    if (!isRunning || !liveCanvas) return;
-                    liveCanvas.width = img.width;
-                    liveCanvas.height = img.height;
-                    liveCanvas.getContext('2d')?.drawImage(img, 0, 0);
-                    
-                    if (!streamRef.current) {
-                      const stream = liveCanvas.captureStream(30);
-                      initStream(stream);
-                    }
-                  };
-                  img.src = url;
-                }
+                const img = new Image();
+                img.onload = () => {
+                  latestImg = img;
+                };
+                img.src = url;
               }
             }
           } catch (e) {
           }
           
           if (isRunning) {
-            digiCamLoopRef.current = setTimeout(loop, 60) as unknown as number; // ~16 FPS
+            digiCamLoopRef.current = setTimeout(loop, 60) as unknown as number; // Polling kamera
           }
         };
         

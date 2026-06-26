@@ -449,7 +449,26 @@ function CameraContent() {
         const liveCanvas = liveViewCanvasRef.current;
         (window as any)._stopDigiCamLoop = () => { isRunning = false; };
         
-        let prevUrl = "";
+        let latestImg: HTMLImageElement | null = null;
+        
+        // Render loop untuk memaksa canvas update 60fps agar captureStream(30) stabil
+        // Mencegah video WebM ter-fast-forward 3x lipat akibat frame drop
+        const renderCanvasLoop = () => {
+          if (!isRunning) return;
+          if (liveCanvas && latestImg && latestImg.width > 0) {
+            liveCanvas.width = latestImg.width;
+            liveCanvas.height = latestImg.height;
+            liveCanvas.getContext('2d')?.drawImage(latestImg, 0, 0);
+            
+            if (!streamRef.current) {
+              const stream = liveCanvas.captureStream(30);
+              initStream(stream);
+            }
+          }
+          if (isRunning) requestAnimationFrame(renderCanvasLoop);
+        };
+        requestAnimationFrame(renderCanvasLoop);
+
         const loop = async () => {
           if (!isRunning) return;
           try {
@@ -460,31 +479,19 @@ function CameraContent() {
             
             if (res.ok) {
               const blob = await res.blob();
-              if (blob.size > 500) { // Pastikan bukan gambar kosong
+              if (blob.size > 500) { 
                 const url = URL.createObjectURL(blob);
                 
-                // 1. Tampilkan ke layar UI via state (agar React re-render otomatis)
                 setLiveViewUrl(old => {
                   if (old) URL.revokeObjectURL(old);
                   return url;
                 });
                 
-                // 2. Gambar ke kanvas rahasia untuk perekam GIF
-                if (liveCanvas) {
-                  const img = new Image();
-                  img.onload = () => {
-                    if (!isRunning || !liveCanvas) return;
-                    liveCanvas.width = img.width;
-                    liveCanvas.height = img.height;
-                    liveCanvas.getContext('2d')?.drawImage(img, 0, 0);
-                    
-                    if (!streamRef.current) {
-                      const stream = liveCanvas.captureStream(30);
-                      initStream(stream);
-                    }
-                  };
-                  img.src = url;
-                }
+                const img = new Image();
+                img.onload = () => {
+                  latestImg = img;
+                };
+                img.src = url;
               }
             }
           } catch (e) {
@@ -492,7 +499,7 @@ function CameraContent() {
           }
           
           if (isRunning) {
-            digiCamLoopRef.current = setTimeout(loop, 60) as unknown as number; // ~16 FPS
+            digiCamLoopRef.current = setTimeout(loop, 60) as unknown as number; // Polling kamera
           }
         };
         

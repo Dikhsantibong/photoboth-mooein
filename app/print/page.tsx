@@ -747,11 +747,7 @@ function PrintContent() {
         return seq;
       };
       
-      const savedCountdown = parseInt(localStorage.getItem("countdownDuration") || "3", 10);
-      const useBoomerang = savedCountdown <= 5;
-      const sequence = useBoomerang 
-        ? buildBoomerangSeq(rawPhotos.length) 
-        : Array.from({ length: rawPhotos.length }, (_, i) => i);
+      const sequence = buildBoomerangSeq(rawPhotos.length);
       
       // Standar photobooth GIF: ~750ms per foto agar perpindahan terasa natural
       const clampedFrameDuration = 750;

@@ -109,7 +109,7 @@ function RenderContent() {
           
           // Validasi: pastikan data foto tidak terlalu kecil (gambar hitam biasanya < 1KB)
           if (photos[i].length < 1000) {
-            console.warn(`Photo ${i} data too small (${photos[i].length} chars), skipping — kemungkinan gambar hitam`);
+            console.warn(`Photo ${i} data too small (${photos[i].length} chars), skipping ΓÇö kemungkinan gambar hitam`);
             continue;
           }
 
@@ -556,7 +556,7 @@ function RenderContent() {
       const savedCountdownDuration = parseInt(localStorage.getItem("countdownDuration") || "3", 10);
       const useBoomerang = savedCountdownDuration <= 5; // boomerang untuk 3 & 5 detik
       const renderDurationMs = useBoomerang
-        ? savedCountdownDuration * 3 * 1000 // 3s→9s, 5s→15s
+        ? savedCountdownDuration * 2 * 1000 // 3s→6s, 5s→10s (Maju + Mundur)
         : savedCountdownDuration * 1000;     // 10s→10s
 
       // Buat urutan foto boomerang: [0,1,2,3,2,1] untuk maju-mundur
@@ -702,46 +702,24 @@ function RenderContent() {
         });
 
         const startTime = Date.now();
-        // Durasi live video menyesuaikan countdown: 3s→9s(boomerang), 5s→15s(boomerang), 10s→10s
+        // Durasi live video menyesuaikan countdown: 3s→6s(boomerang), 5s→10s(boomerang), 10s→10s
         const duration = renderDurationMs;
 
+        // ── Frame Cache untuk Boomerang ──
+        // Selama putar MAJU: tangkap frame komposit ke offscreen canvas setiap ~66ms (15fps)
+        // Selama putar MUNDUR: gambar ulang dari cache (tanpa seeking = tanpa lag)
+        const CACHE_INTERVAL_MS = 66;
+        const cachedFrames: HTMLCanvasElement[] = [];
+        let lastCacheTime = -CACHE_INTERVAL_MS;
 
-        const renderLoop = () => {
-          const elapsed = Date.now() - startTime;
-          setLoadingProgress(Math.min(99, Math.round((elapsed / duration) * 100)));
-
-          if (elapsed > duration) {
-            setLoadingProgress(100);
-            if (recorder.state === "recording") {
-              recorder.stop();
-            }
-            return;
-          }
-
-          // Boomerang: kontrol currentTime secara manual
-          if (useBoomerang && singlePassDuration > 0) {
-            const cyclePos = elapsed % (singlePassDuration * 2); // 1 cycle = maju + mundur
-            const isReverse = cyclePos >= singlePassDuration;
-            const timeInCycle = isReverse 
-              ? (singlePassDuration * 2 - cyclePos) / 1000 
-              : cyclePos / 1000;
-            
-            videoElements.forEach(v => {
-              if (v.src && v.duration) {
-                const clampedTime = Math.min(Math.max(0, timeInCycle), v.duration - 0.01);
-                // Pause video agar kita bisa kontrol currentTime manual
-                if (!v.paused) v.pause();
-                v.currentTime = clampedTime;
-              }
-            });
-          }
-
-          // 1. Gambar Base Statis (untuk background dan pinggiran aslinya)
+        // Helper: gambar 1 frame komposit
+        const drawCompositeFrame = () => {
+          // 1. Gambar Base Statis
           ctx.fillStyle = "#ffffff";
           ctx.fillRect(0, 0, dim.w, dim.h);
           ctx.drawImage(baseImg, 0, 0);
 
-          // 2. Gambar Video berjalan yang menutupi base image di titik frames
+          // 2. Gambar Video berjalan
           for (let i = 0; i < videoElements.length; i++) {
             const vid = videoElements[i];
             const fr = frames[i];
@@ -751,7 +729,6 @@ function RenderContent() {
               const fw = parseInt(fr.width, 10);
               const fh = parseInt(fr.height, 10);
 
-              // Hardware crop zoom to hide EOS Webcam Utility black bars
               const CAMERA_ZOOM = 1.20;
               const cropW = vid.videoWidth / CAMERA_ZOOM;
               const cropH = vid.videoHeight / CAMERA_ZOOM;
@@ -771,7 +748,6 @@ function RenderContent() {
               }
 
               try {
-                // Flip video horizontally agar sesuai dengan foto yang sudah di-mirror
                 ctx.save();
                 ctx.translate(x + fw / 2, y + fh / 2);
                 if (fr.angle) {
@@ -784,8 +760,7 @@ function RenderContent() {
             }
           }
 
-          // 3. Tumpuk kembali dengan template orisinal mentah (yang berlubang transparan)
-          // Supaya video tadi tertutup rapi oleh garis tepi template
+          // 3. Tumpuk template orisinal mentah
           if (hasTemplateImg) {
             ctx.drawImage(rawTemplateImg, 0, 0, dim.w, dim.h);
           }
@@ -805,6 +780,57 @@ function RenderContent() {
           }
 
           if (canvasRef.current) ctx.drawImage(canvasRef.current, 0, 0);
+        };
+
+        const renderLoop = () => {
+          const elapsed = Date.now() - startTime;
+          setLoadingProgress(Math.min(99, Math.round((elapsed / duration) * 100)));
+
+          if (elapsed > duration) {
+            setLoadingProgress(100);
+            if (recorder.state === "recording") {
+              recorder.stop();
+            }
+            cachedFrames.length = 0;
+            return;
+          }
+
+          if (elapsed < singlePassDuration || !useBoomerang) {
+            // ── PASS 0 (MAJU): video bermain natural
+            drawCompositeFrame();
+
+            // Cache frame setiap CACHE_INTERVAL_MS
+            if (elapsed - lastCacheTime >= CACHE_INTERVAL_MS) {
+              const snap = document.createElement('canvas');
+              snap.width = dim.w;
+              snap.height = dim.h;
+              const snapCtx = snap.getContext('2d');
+              if (snapCtx) {
+                snapCtx.drawImage(finalCanvas, 0, 0);
+                cachedFrames.push(snap);
+              }
+              lastCacheTime = elapsed;
+            }
+          } else {
+            // ── PASS 1+ (MUNDUR/MAJU ulangan): pakai cache agar ringan
+            const currentPass = Math.floor(elapsed / singlePassDuration);
+            const isReversePass = currentPass % 2 !== 0; 
+            
+            const passElapsed = elapsed - (currentPass * singlePassDuration);
+            let progress = Math.min(1, passElapsed / singlePassDuration); // 0→1
+            
+            if (isReversePass) {
+              progress = 1 - progress; // Mundur
+            }
+            
+            const frameIdx = Math.max(0, Math.min(cachedFrames.length - 1, Math.floor(progress * cachedFrames.length)));
+
+            if (cachedFrames[frameIdx]) {
+              ctx.drawImage(cachedFrames[frameIdx], 0, 0);
+            } else {
+              drawCompositeFrame(); // fallback
+            }
+          }
 
           animationFrameRef.current = requestAnimationFrame(renderLoop);
         };
@@ -917,17 +943,17 @@ function RenderContent() {
                               className="absolute -top-[140px] left-1/2 -translate-x-1/2 w-[120px] h-[120px] bg-white border-[10px] border-black rounded-full flex items-center justify-center cursor-alias shadow-2xl text-[60px] text-black font-black hover:scale-110 active:scale-90 transition-transform"
                               onMouseDown={(e) => onStickerPointerDown(e, st.id, 'rotate')}
                               onTouchStart={(e) => onStickerPointerDown(e, st.id, 'rotate')}
-                            >↻</div>
+                            >Γå╗</div>
                             <div
                               className="absolute -bottom-[60px] -right-[60px] w-[120px] h-[120px] bg-white border-[10px] border-black rounded-full flex items-center justify-center cursor-nwse-resize shadow-2xl text-[60px] text-black font-black hover:scale-110 active:scale-90 transition-transform"
                               onMouseDown={(e) => onStickerPointerDown(e, st.id, 'scale')}
                               onTouchStart={(e) => onStickerPointerDown(e, st.id, 'scale')}
-                            >⤡</div>
+                            >Γñí</div>
                             <div
                               className="absolute -top-[60px] -right-[60px] w-[120px] h-[120px] bg-rose-50 border-[10px] border-rose-500 rounded-full flex items-center justify-center cursor-pointer shadow-2xl text-[60px] text-rose-500 font-black hover:scale-110 active:scale-90 transition-transform"
                               onMouseDown={(e) => { e.stopPropagation(); deleteSelectedSticker(); }}
                               onTouchStart={(e) => { e.stopPropagation(); deleteSelectedSticker(); }}
-                            >✕</div>
+                            >Γ£ò</div>
                           </>
                         )}
                       </div>

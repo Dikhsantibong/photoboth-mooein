@@ -209,30 +209,44 @@ export default function BackgroundUploader() {
       });
     }
 
+    // Helper: konversi video WebM ke MP4 via ffmpeg API
+    const convertToMp4 = async (blob: Blob): Promise<Blob> => {
+      try {
+        const convertForm = new FormData();
+        convertForm.append("video", blob, "input.webm");
+        const convertRes = await fetch(`/api/convert-video`, {
+          method: "POST",
+          body: convertForm,
+        });
+        if (convertRes.ok && convertRes.headers.get("X-Conversion-Success") === "true") {
+          const mp4ArrayBuffer = await convertRes.arrayBuffer();
+          return new Blob([mp4ArrayBuffer], { type: "video/mp4" });
+        }
+      } catch (convErr) {
+        console.warn('[BackgroundUploader] Konversi video gagal, menggunakan blob asli:', convErr);
+      }
+      return new Blob([blob], { type: "video/mp4" });
+    };
+
+    // Batas ukuran video: 5MB per file. Jika lebih besar, skip video dari upload.
+    // Server PHP biasanya punya batas post_max_size 8-20MB. Dengan gambar + foto + 2 video,
+    // total bisa sangat besar jika tidak dibatasi.
+    const MAX_VIDEO_SIZE = 5 * 1024 * 1024; // 5MB
+
     // Video 
     if (task.videoBlob) {
       let videoToUpload: Blob = task.videoBlob;
       
-      // Handle fallback form MP4 Convert logic in case the blob is raw webm locally
-      if (task.videoBlob.type.includes("webm") || !task.videoBlob.type.includes("mp4")) {
-        try {
-          const convertForm = new FormData();
-          convertForm.append("video", task.videoBlob, "input.webm");
-          const convertRes = await fetch(`/api/convert-video`, {
-            method: "POST",
-            body: convertForm,
-          });
-          if (convertRes.ok && convertRes.headers.get("X-Conversion-Success") === "true") {
-            const mp4ArrayBuffer = await convertRes.arrayBuffer();
-            videoToUpload = new Blob([mp4ArrayBuffer], { type: "video/mp4" });
-          } else {
-             videoToUpload = new Blob([task.videoBlob], { type: "video/mp4" });
-          }
-        } catch (convErr) {
-          videoToUpload = new Blob([task.videoBlob], { type: "video/mp4" });
-        }
+      if (task.videoBlob.type?.includes("webm") || !task.videoBlob.type?.includes("mp4")) {
+        videoToUpload = await convertToMp4(task.videoBlob);
       }
-      formData.append("video", videoToUpload, "final.mp4");
+
+      if (videoToUpload.size <= MAX_VIDEO_SIZE) {
+        formData.append("video", videoToUpload, "final.mp4");
+        console.log(`[BackgroundUploader] Video: ${(videoToUpload.size / 1024 / 1024).toFixed(2)} MB`);
+      } else {
+        console.warn(`[BackgroundUploader] Video terlalu besar (${(videoToUpload.size / 1024 / 1024).toFixed(2)} MB > ${MAX_VIDEO_SIZE / 1024 / 1024}MB). Video dilewati agar upload tidak gagal.`);
+      }
     }
 
     // GIF Video
@@ -240,25 +254,24 @@ export default function BackgroundUploader() {
       let gifToUpload: Blob = task.gifBlob;
       
       if (task.gifBlob.type?.includes("webm") || !task.gifBlob.type?.includes("mp4")) {
-        try {
-          const convertForm = new FormData();
-          convertForm.append("video", task.gifBlob, "input.webm");
-          const convertRes = await fetch(`/api/convert-video`, {
-            method: "POST",
-            body: convertForm,
-          });
-          if (convertRes.ok && convertRes.headers.get("X-Conversion-Success") === "true") {
-            const mp4ArrayBuffer = await convertRes.arrayBuffer();
-            gifToUpload = new Blob([mp4ArrayBuffer], { type: "video/mp4" });
-          } else {
-            gifToUpload = new Blob([task.gifBlob], { type: "video/mp4" });
-          }
-        } catch (convErr) {
-          gifToUpload = new Blob([task.gifBlob], { type: "video/mp4" });
-        }
+        gifToUpload = await convertToMp4(task.gifBlob);
       }
-      formData.append("gif_video", gifToUpload, "gif.mp4");
+
+      if (gifToUpload.size <= MAX_VIDEO_SIZE) {
+        formData.append("gif_video", gifToUpload, "gif.mp4");
+        console.log(`[BackgroundUploader] GIF Video: ${(gifToUpload.size / 1024 / 1024).toFixed(2)} MB`);
+      } else {
+        console.warn(`[BackgroundUploader] GIF Video terlalu besar (${(gifToUpload.size / 1024 / 1024).toFixed(2)} MB > ${MAX_VIDEO_SIZE / 1024 / 1024}MB). GIF dilewati agar upload tidak gagal.`);
+      }
     }
+
+    // Hitung total perkiraan ukuran payload
+    let totalSize = 0;
+    for (const [key, value] of formData.entries()) {
+      if (value instanceof Blob) totalSize += value.size;
+      else totalSize += (value as string).length;
+    }
+    console.log(`[BackgroundUploader] Total payload: ~${(totalSize / 1024 / 1024).toFixed(2)} MB`);
 
     return new Promise<"success" | "network_error" | "server_error">((resolve) => {
       const xhr = new XMLHttpRequest();
@@ -274,19 +287,26 @@ export default function BackgroundUploader() {
              resolve("success");
           } else {
              console.error(`[BackgroundUploader] Upload failed with Status ${xhr.status}:`, res);
+             console.error(`[BackgroundUploader] Response text:`, xhr.responseText.substring(0, 500));
              if (xhr.status >= 500) resolve("server_error");
              else resolve("network_error");
           }
         } catch (e) {
-          console.error(`[BackgroundUploader] Invalid JSON response`, xhr.responseText);
+          console.error(`[BackgroundUploader] Invalid JSON response (status ${xhr.status}):`, xhr.responseText?.substring(0, 500));
           if (xhr.status >= 500) resolve("server_error");
           else resolve("network_error");
         }
       };
-      xhr.onerror = () => resolve("network_error");
-      // Timeout 60 detik untuk mencegah nyangkut
-      xhr.timeout = 60000;
-      xhr.ontimeout = () => resolve("network_error");
+      xhr.onerror = () => {
+        console.error(`[BackgroundUploader] XHR network error. readyState=${xhr.readyState}, status=${xhr.status}`);
+        resolve("network_error");
+      };
+      // Timeout 120 detik untuk video yang besar
+      xhr.timeout = 120000;
+      xhr.ontimeout = () => {
+        console.error(`[BackgroundUploader] Upload timeout setelah 120 detik. Payload ~${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+        resolve("network_error");
+      };
       xhr.send(formData);
     });
   };
