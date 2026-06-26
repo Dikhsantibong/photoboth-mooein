@@ -575,8 +575,10 @@ function RenderContent() {
         }
 
         let options: any = { mimeType: 'video/webm', videoBitsPerSecond: 800000 };
-        if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
-          options = { mimeType: 'video/webm; codecs=vp8', videoBitsPerSecond: 800000 };
+        if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
+          options = { mimeType: 'video/mp4; codecs="avc1.42E01E"', videoBitsPerSecond: 800000 };
+        } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
+          options = { mimeType: 'video/webm; codecs=h264', videoBitsPerSecond: 800000 };
         }
 
         const gifCanvas = document.createElement('canvas');
@@ -591,6 +593,7 @@ function RenderContent() {
         // Pre-draw sebelum captureStream agar tidak kosong
         gifCtx.fillStyle = "#ffffff";
         gifCtx.fillRect(0, 0, gifCanvas.width, gifCanvas.height);
+        
         if (photoElements[0]) {
           gifCtx.drawImage(photoElements[0], 0, 0, gifCanvas.width, gifCanvas.height);
         }
@@ -607,7 +610,7 @@ function RenderContent() {
         recorder.onstop = async () => {
           // Safeguard: tunggu sedikit agar semua chunks ter-flush
           await new Promise(r => setTimeout(r, 200));
-          const finalBlob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+          const finalBlob = new Blob(chunks, { type: 'video/webm' });
           console.log(`[GIF] Final blob size: ${finalBlob.size} bytes, duration target: ${renderDurationMs}ms`);
           await localforage.setItem("finalGifVideo", finalBlob);
           finishStaticImage();
@@ -653,6 +656,10 @@ function RenderContent() {
             gifCtx.drawImage(currentPhoto, 0, 0, gifCanvas.width, gifCanvas.height);
           }
 
+          // Force frame emission for MediaRecorder
+          gifCtx.fillStyle = `rgb(${Date.now() % 255}, 0, 0)`;
+          gifCtx.fillRect(0, 0, 1, 1);
+
           animationFrameRef.current = requestAnimationFrame(renderGifLoop);
         };
         renderGifLoop();
@@ -660,8 +667,10 @@ function RenderContent() {
 
       if (videoElements.some(v => v.src)) {
         let options: any = { mimeType: 'video/webm', videoBitsPerSecond: 1200000 }; // 1.2 Mbps
-        if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
-          options = { mimeType: 'video/webm; codecs=vp8', videoBitsPerSecond: 1200000 };
+        if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
+          options = { mimeType: 'video/mp4; codecs="avc1.42E01E"', videoBitsPerSecond: 1200000 };
+        } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
+          options = { mimeType: 'video/webm; codecs=h264', videoBitsPerSecond: 1200000 };
         }
 
         // Initial draw to prevent empty stream bug in Chromium
@@ -681,7 +690,7 @@ function RenderContent() {
         };
 
         recorder.onstop = async () => {
-          const finalBlob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+          const finalBlob = new Blob(chunks, { type: 'video/webm' });
           await localforage.setItem("finalLiveVideo", 
             finalBlob);
           videoElements.forEach(v => v.src && URL.revokeObjectURL(v.src));
@@ -831,6 +840,10 @@ function RenderContent() {
               drawCompositeFrame(); // fallback
             }
           }
+
+          // Force frame emission for MediaRecorder
+          ctx.fillStyle = `rgb(${Date.now() % 255}, 0, 0)`;
+          ctx.fillRect(0, 0, 1, 1);
 
           animationFrameRef.current = requestAnimationFrame(renderLoop);
         };

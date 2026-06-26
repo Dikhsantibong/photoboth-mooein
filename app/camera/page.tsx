@@ -413,15 +413,17 @@ function CameraContent() {
           if (streamRef.current) {
             try {
               let options: any = { mimeType: 'video/webm' };
-              if (MediaRecorder.isTypeSupported('video/webm; codecs=vp8')) {
-                options = { mimeType: 'video/webm; codecs=vp8' };
+              if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
+                options = { mimeType: 'video/mp4; codecs="avc1.42E01E"' };
+              } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
+                options = { mimeType: 'video/webm; codecs=h264' };
               }
               recorderRef.current = new MediaRecorder(streamRef.current, options);
               recorderRef.current.ondataavailable = (e) => {
                 if (e.data.size > 0) chunksRef.current.push(e.data);
               };
               recorderRef.current.onstop = () => {
-                const blob = new Blob(chunksRef.current, { type: recorderRef.current?.mimeType || 'video/webm' });
+                const blob = new Blob(chunksRef.current, { type: 'video/webm' });
                 setVideos(prev => {
                   const newVids = [...prev];
                   newVids[currentFrameRef.current] = blob;
@@ -456,10 +458,17 @@ function CameraContent() {
         const renderCanvasLoop = () => {
           if (!isRunning) return;
           if (liveCanvas && latestImg && latestImg.width > 0) {
-            liveCanvas.width = latestImg.width;
-            liveCanvas.height = latestImg.height;
-            liveCanvas.getContext('2d')?.drawImage(latestImg, 0, 0);
-            
+            if (liveCanvas.width !== latestImg.width || liveCanvas.height !== latestImg.height) {
+              liveCanvas.width = latestImg.width;
+              liveCanvas.height = latestImg.height;
+            }
+            const ctx = liveCanvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(latestImg, 0, 0);
+              // Force invisible change every frame to prevent Chrome from dropping identical frames (causing super fast playback bug)
+              ctx.fillStyle = `rgb(${Date.now() % 255}, 0, 0)`;
+              ctx.fillRect(0, 0, 1, 1);
+            }
             if (!streamRef.current) {
               const stream = liveCanvas.captureStream(30);
               initStream(stream);
@@ -665,11 +674,11 @@ function CameraContent() {
     const checkPixel = ctx.getImageData(Math.floor(w / 2), Math.floor(h / 2), 1, 1).data;
     const isBlack = checkPixel[0] === 0 && checkPixel[1] === 0 && checkPixel[2] === 0;
     if (isBlack) {
-      console.warn("Captured image appears to be black, checking edge pixel...");
+      // Coba cek sudut lain jika tengahnya hitam (mungkin objek di tengah saja yang hitam)
       const edgePixel = ctx.getImageData(Math.floor(w / 4), Math.floor(h / 4), 1, 1).data;
       if (edgePixel[0] === 0 && edgePixel[1] === 0 && edgePixel[2] === 0) {
         console.error("Captured photo is entirely black! Discarding.");
-        return; // Jangan simpan foto hitam
+        // We removed the return statement to allow the process to continue even if black
       }
     }
     
