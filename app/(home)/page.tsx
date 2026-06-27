@@ -3,6 +3,7 @@
 import React, { useRef, useCallback, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Poppins } from "next/font/google";
+import AutoUpdaterUI from "../components/AutoUpdaterUI";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -81,6 +82,7 @@ export default function Home() {
             Mulai
           </button>
         </main>
+      <AutoUpdaterUI />
     </div>
   );
 }

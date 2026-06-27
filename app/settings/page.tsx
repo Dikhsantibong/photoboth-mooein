@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import localforage from "localforage";
 import dynamic from "next/dynamic";
 import "react-simple-keyboard/build/css/index.css";
-import AutoUpdaterUI from "../components/AutoUpdaterUI";
-
 const Keyboard = dynamic(() => import("react-simple-keyboard"), { ssr: false });
 
 interface EnvData {
@@ -1149,9 +1147,6 @@ export default function SettingsPage() {
           </div>
         )}
       </main>
-
-      <AutoUpdaterUI />
-
       {/* Virtual Keyboard */}
       <div 
         className={`fixed bottom-0 left-0 w-full bg-slate-100 border-t border-slate-300 shadow-[0_-10px_40px_rgba(0,0,0,0.15)] transition-transform duration-300 z-[100] ${
