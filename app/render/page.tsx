@@ -574,19 +574,19 @@ function RenderContent() {
           return;
         }
 
-        let options: any = { mimeType: 'video/webm', videoBitsPerSecond: 800000 };
+        let options: any = { mimeType: 'video/webm', videoBitsPerSecond: 4000000 };
         if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
-          options = { mimeType: 'video/mp4; codecs="avc1.42E01E"', videoBitsPerSecond: 800000 };
+          options = { mimeType: 'video/mp4; codecs="avc1.42E01E"', videoBitsPerSecond: 4000000 };
         } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
-          options = { mimeType: 'video/webm; codecs=h264', videoBitsPerSecond: 800000 };
+          options = { mimeType: 'video/webm; codecs=h264', videoBitsPerSecond: 4000000 };
         }
 
         const gifCanvas = document.createElement('canvas');
         
-        // OPTIMASI CPU: Downscale GIF ke maksimal 800px agar encoding super cepat dan ringan
+        // OPTIMASI: Resolusi ditingkatkan ke 1080px agar kualitas HD namun tetap ringan untuk diproses CPU
         const baseW = photoElements[0].width || dim.w;
         const baseH = photoElements[0].height || dim.h;
-        const maxGifDim = 800;
+        const maxGifDim = 1080;
         let gifW = baseW;
         let gifH = baseH;
         
@@ -684,15 +684,15 @@ function RenderContent() {
       };
 
       if (videoElements.some(v => v.src)) {
-        let options: any = { mimeType: 'video/webm', videoBitsPerSecond: 1200000 }; // 1.2 Mbps
+        let options: any = { mimeType: 'video/webm', videoBitsPerSecond: 5000000 }; // 5 Mbps untuk kualitas HD
         if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
-          options = { mimeType: 'video/mp4; codecs="avc1.42E01E"', videoBitsPerSecond: 1200000 };
+          options = { mimeType: 'video/mp4; codecs="avc1.42E01E"', videoBitsPerSecond: 5000000 };
         } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
-          options = { mimeType: 'video/webm; codecs=h264', videoBitsPerSecond: 1200000 };
+          options = { mimeType: 'video/webm; codecs=h264', videoBitsPerSecond: 5000000 };
         }
 
-        // OPTIMASI: Gunakan canvas terpisah untuk render video agar GPU tidak crash saat captureStream
-        const maxVideoDim = 800;
+        // OPTIMASI: Gunakan canvas terpisah untuk render video agar GPU tidak crash, namun dengan resolusi HD (1080px)
+        const maxVideoDim = 1080;
         let vidW = dim.w;
         let vidH = dim.h;
         if (dim.w > maxVideoDim || dim.h > maxVideoDim) {
@@ -737,8 +737,11 @@ function RenderContent() {
 
         recorder.start();
         
-        // Dapatkan durasi asli video untuk boomerang timing
-        const videoDurations = videoElements.map(v => v.duration || savedCountdownDuration);
+        // Dapatkan durasi asli video untuk boomerang timing, filter Infinity bug dari Chrome WebM
+        const videoDurations = videoElements.map(v => {
+          if (!v.duration || !Number.isFinite(v.duration)) return savedCountdownDuration;
+          return v.duration;
+        });
         const singlePassDuration = Math.max(...videoDurations) * 1000; // durasi 1x putar dalam ms
         
         videoElements.forEach(v => {
@@ -753,10 +756,10 @@ function RenderContent() {
         const duration = renderDurationMs;
 
         // ── Frame Cache untuk Boomerang ──
-        // Selama putar MAJU: tangkap frame komposit ke offscreen canvas setiap ~66ms (15fps)
+        // Selama putar MAJU: tangkap frame komposit ke memori setiap ~66ms (15fps)
         // Selama putar MUNDUR: gambar ulang dari cache (tanpa seeking = tanpa lag)
         const CACHE_INTERVAL_MS = 66;
-        const cachedFrames: HTMLCanvasElement[] = [];
+        const cachedFrames: (ImageBitmap | null)[] = [];
         let lastCacheTime = -CACHE_INTERVAL_MS;
 
         // Helper: gambar 1 frame komposit ke canvas video
@@ -858,17 +861,26 @@ function RenderContent() {
 
             // Cache frame setiap CACHE_INTERVAL_MS
             if (elapsed - lastCacheTime >= CACHE_INTERVAL_MS) {
-              // OPTIMASI VRAM: Downscale cache sebesar 2.5x untuk mencegah GPU Crash (Black Screen) pada Mini PC
-              const DOWNSCALE = 2.5;
-              const snap = document.createElement('canvas');
-              snap.width = vidW / DOWNSCALE;
-              snap.height = vidH / DOWNSCALE;
-              const snapCtx = snap.getContext('2d');
-              if (snapCtx) {
-                // Gambar dengan ukuran diperkecil
-                snapCtx.drawImage(videoRenderCanvas, 0, 0, snap.width, snap.height);
-                cachedFrames.push(snap);
+              // OPTIMASI MEMORI ekstrim: Gunakan ImageBitmap alih-alih elemen <canvas>!
+              // Membuat puluhan kanvas HD akan menghantam "Canvas Context Limit" bawaan Chrome
+              // yang menyebabkan perekaman terhenti di detik pertama. ImageBitmap melewati limit ini.
+              const frameIndex = cachedFrames.length;
+              cachedFrames.push(null); // placeholder berurutan
+              
+              if (typeof createImageBitmap !== "undefined") {
+                createImageBitmap(videoRenderCanvas).then(bmp => {
+                  cachedFrames[frameIndex] = bmp;
+                }).catch(() => {});
+              } else {
+                // Fallback untuk browser lawas yang tidak mendukung ImageBitmap
+                const snap = document.createElement('canvas');
+                snap.width = vidW;
+                snap.height = vidH;
+                const snapCtx = snap.getContext('2d');
+                if (snapCtx) snapCtx.drawImage(videoRenderCanvas, 0, 0, vidW, vidH);
+                cachedFrames[frameIndex] = snap as any;
               }
+              
               lastCacheTime = elapsed;
             }
           } else {
