@@ -582,8 +582,26 @@ function RenderContent() {
         }
 
         const gifCanvas = document.createElement('canvas');
-        gifCanvas.width = photoElements[0].width || dim.w;
-        gifCanvas.height = photoElements[0].height || dim.h;
+        
+        // OPTIMASI CPU: Downscale GIF ke maksimal 800px agar encoding super cepat dan ringan
+        const baseW = photoElements[0].width || dim.w;
+        const baseH = photoElements[0].height || dim.h;
+        const maxGifDim = 800;
+        let gifW = baseW;
+        let gifH = baseH;
+        
+        if (baseW > maxGifDim || baseH > maxGifDim) {
+          if (baseW > baseH) {
+            gifW = maxGifDim;
+            gifH = Math.round(baseH * (maxGifDim / baseW));
+          } else {
+            gifH = maxGifDim;
+            gifW = Math.round(baseW * (maxGifDim / baseH));
+          }
+        }
+        
+        gifCanvas.width = gifW;
+        gifCanvas.height = gifH;
         const gifCtx = gifCanvas.getContext('2d');
         if (!gifCtx) {
           finishStaticImage();
@@ -616,7 +634,7 @@ function RenderContent() {
           finishStaticImage();
         };
 
-        recorder.start(100);
+        recorder.start();
 
         const startTime = Date.now();
         const duration = renderDurationMs;
@@ -673,15 +691,35 @@ function RenderContent() {
           options = { mimeType: 'video/webm; codecs=h264', videoBitsPerSecond: 1200000 };
         }
 
-        // Initial draw to prevent empty stream bug in Chromium
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, dim.w, dim.h);
+        // OPTIMASI: Gunakan canvas terpisah untuk render video agar GPU tidak crash saat captureStream
+        const maxVideoDim = 800;
+        let vidW = dim.w;
+        let vidH = dim.h;
+        if (dim.w > maxVideoDim || dim.h > maxVideoDim) {
+          if (dim.w > dim.h) {
+            vidW = maxVideoDim;
+            vidH = Math.round(dim.h * (maxVideoDim / dim.w));
+          } else {
+            vidH = maxVideoDim;
+            vidW = Math.round(dim.w * (maxVideoDim / dim.h));
+          }
+        }
+
+        const videoRenderCanvas = document.createElement('canvas');
+        videoRenderCanvas.width = vidW;
+        videoRenderCanvas.height = vidH;
+        const vidCtx = videoRenderCanvas.getContext('2d');
+        if (!vidCtx) return;
+
+        // Initial draw
+        vidCtx.fillStyle = "#ffffff";
+        vidCtx.fillRect(0, 0, vidW, vidH);
         if (baseImg.src) {
-          ctx.drawImage(baseImg, 0, 0);
+          vidCtx.drawImage(baseImg, 0, 0, vidW, vidH);
         }
         
-        // Turunkan framerate menjadi 20fps agar ukuran file tidak terlalu membengkak saat boomerang 15 detik
-        const stream = finalCanvas.captureStream(20);
+        // Turunkan framerate menjadi 20fps agar ukuran file tidak terlalu membengkak
+        const stream = videoRenderCanvas.captureStream(20);
         const recorder = new MediaRecorder(stream, options);
         const chunks: BlobPart[] = [];
 
@@ -697,7 +735,7 @@ function RenderContent() {
           generateGifVideo();
         };
 
-        recorder.start(100);
+        recorder.start();
         
         // Dapatkan durasi asli video untuk boomerang timing
         const videoDurations = videoElements.map(v => v.duration || savedCountdownDuration);
@@ -721,12 +759,12 @@ function RenderContent() {
         const cachedFrames: HTMLCanvasElement[] = [];
         let lastCacheTime = -CACHE_INTERVAL_MS;
 
-        // Helper: gambar 1 frame komposit
+        // Helper: gambar 1 frame komposit ke canvas video
         const drawCompositeFrame = () => {
           // 1. Gambar Base Statis
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, dim.w, dim.h);
-          ctx.drawImage(baseImg, 0, 0);
+          vidCtx.fillStyle = "#ffffff";
+          vidCtx.fillRect(0, 0, vidW, vidH);
+          vidCtx.drawImage(baseImg, 0, 0, vidW, vidH);
 
           // 2. Gambar Video berjalan
           for (let i = 0; i < videoElements.length; i++) {
@@ -737,6 +775,14 @@ function RenderContent() {
               const y = parseInt(fr.y, 10);
               const fw = parseInt(fr.width, 10);
               const fh = parseInt(fr.height, 10);
+
+              // Skala koordinat template asli ke ukuran kanvas video yang lebih kecil
+              const scaleX = vidW / dim.w;
+              const scaleY = vidH / dim.h;
+              const scaledX = x * scaleX;
+              const scaledY = y * scaleY;
+              const scaledFw = fw * scaleX;
+              const scaledFh = fh * scaleY;
 
               const CAMERA_ZOOM = 1.20;
               const cropW = vid.videoWidth / CAMERA_ZOOM;
@@ -757,38 +803,40 @@ function RenderContent() {
               }
 
               try {
-                ctx.save();
-                ctx.translate(x + fw / 2, y + fh / 2);
+                vidCtx.save();
+                vidCtx.translate(scaledX + scaledFw / 2, scaledY + scaledFh / 2);
                 if (fr.angle) {
-                  ctx.rotate((fr.angle * Math.PI) / 180);
+                  vidCtx.rotate((fr.angle * Math.PI) / 180);
                 }
-                ctx.scale(-1, 1);
-                ctx.drawImage(vid, sx, sy, sw, sh, -fw / 2, -fh / 2, fw, fh);
-                ctx.restore();
+                vidCtx.scale(-1, 1);
+                vidCtx.drawImage(vid, sx, sy, sw, sh, -scaledFw / 2, -scaledFh / 2, scaledFw, scaledFh);
+                vidCtx.restore();
               } catch (e) { }
             }
           }
 
           // 3. Tumpuk template orisinal mentah
           if (hasTemplateImg) {
-            ctx.drawImage(rawTemplateImg, 0, 0, dim.w, dim.h);
+            vidCtx.drawImage(rawTemplateImg, 0, 0, vidW, vidH);
           }
 
           // 4. Stiker
           for (const { img, st } of stickerImages) {
             if (img.src) {
-              ctx.save();
-              ctx.translate(st.x, st.y);
-              ctx.rotate((st.rotation * Math.PI) / 180);
-              ctx.scale(st.scale, st.scale);
+              vidCtx.save();
+              const scaleX = vidW / dim.w;
+              const scaleY = vidH / dim.h;
+              vidCtx.translate(st.x * scaleX, st.y * scaleY);
+              vidCtx.rotate((st.rotation * Math.PI) / 180);
+              vidCtx.scale(st.scale * scaleX, st.scale * scaleY);
               const drawW = 300;
               const drawH = (200 / img.width) * img.height;
-              ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
-              ctx.restore();
+              vidCtx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+              vidCtx.restore();
             }
           }
 
-          if (canvasRef.current) ctx.drawImage(canvasRef.current, 0, 0);
+          if (canvasRef.current) vidCtx.drawImage(canvasRef.current, 0, 0, vidW, vidH);
         };
 
         const renderLoop = () => {
@@ -810,12 +858,15 @@ function RenderContent() {
 
             // Cache frame setiap CACHE_INTERVAL_MS
             if (elapsed - lastCacheTime >= CACHE_INTERVAL_MS) {
+              // OPTIMASI VRAM: Downscale cache sebesar 2.5x untuk mencegah GPU Crash (Black Screen) pada Mini PC
+              const DOWNSCALE = 2.5;
               const snap = document.createElement('canvas');
-              snap.width = dim.w;
-              snap.height = dim.h;
+              snap.width = vidW / DOWNSCALE;
+              snap.height = vidH / DOWNSCALE;
               const snapCtx = snap.getContext('2d');
               if (snapCtx) {
-                snapCtx.drawImage(finalCanvas, 0, 0);
+                // Gambar dengan ukuran diperkecil
+                snapCtx.drawImage(videoRenderCanvas, 0, 0, snap.width, snap.height);
                 cachedFrames.push(snap);
               }
               lastCacheTime = elapsed;
@@ -835,15 +886,16 @@ function RenderContent() {
             const frameIdx = Math.max(0, Math.min(cachedFrames.length - 1, Math.floor(progress * cachedFrames.length)));
 
             if (cachedFrames[frameIdx]) {
-              ctx.drawImage(cachedFrames[frameIdx], 0, 0);
+              // Gambar ulang cache dengan ukuran aslinya (diperbesar kembali)
+              vidCtx.drawImage(cachedFrames[frameIdx], 0, 0, vidW, vidH);
             } else {
               drawCompositeFrame(); // fallback
             }
           }
 
           // Force frame emission for MediaRecorder
-          ctx.fillStyle = `rgb(${Date.now() % 255}, 0, 0)`;
-          ctx.fillRect(0, 0, 1, 1);
+          vidCtx.fillStyle = `rgb(${Date.now() % 255}, 0, 0)`;
+          vidCtx.fillRect(0, 0, 1, 1);
 
           animationFrameRef.current = requestAnimationFrame(renderLoop);
         };
@@ -859,7 +911,7 @@ function RenderContent() {
 
   if (isLoading || !baseImage) {
     return (
-      <div className="h-screen w-full flex flex-col items-center justify-center p-2 sm:p-3 gap-4" style={{ backgroundImage: customBgImage ? `url(${customBgImage})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}>
+      <div className={`h-screen w-full flex flex-col items-center justify-center p-2 sm:p-3 gap-4 ${!customBgImage ? 'bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900' : ''}`} style={{ backgroundImage: customBgImage ? `url(${customBgImage})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}>
         {!customBgImage && (
           <>
             {/* Background decoration */}
@@ -881,7 +933,7 @@ function RenderContent() {
 
   return (
     <div
-      className="relative h-screen w-full overflow-hidden p-2 sm:p-3 font-sans text-slate-900 flex flex-col"
+      className={`relative h-screen w-full overflow-hidden p-2 sm:p-3 font-sans text-slate-900 flex flex-col ${!customBgImage ? 'bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900' : ''}`}
       style={{ backgroundImage: customBgImage ? `url(${customBgImage})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}
       onMouseMove={onPointerMove}
       onMouseUp={onPointerUp}

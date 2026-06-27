@@ -112,6 +112,9 @@ function CameraContent() {
   const [photos, setPhotos] = useState<(string | null)[]>(Array(totalFrames).fill(null));
 
   const [videos, setVideos] = useState<(Blob | null)[]>(Array(totalFrames).fill(null));
+  
+  // OPTIMASI: Gunakan Ref untuk menghindari race condition (video terakhir gagal tersimpan karena State telat update)
+  const videosRef = useRef<(Blob | null)[]>(Array(totalFrames).fill(null));
 
   const recorderRef = useRef<MediaRecorder | null>(null);
 
@@ -182,7 +185,7 @@ function CameraContent() {
         const landmarker = await HandLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: "/models/hand_landmarker.task",
-            delegate: "GPU"
+            delegate: "CPU" // OPTIMASI: Gunakan CPU agar GPU 100% fokus merender video (mencegah lag di PC spesifikasi standar)
           },
           runningMode: "VIDEO",
           numHands: 2
@@ -412,23 +415,22 @@ function CameraContent() {
           setCameraReady(true);
           if (streamRef.current) {
             try {
+              // Gunakan VP8 (video/webm default) untuk perekaman raw.
+              // JANGAN gunakan H.264 hardware encoder di sini karena akan mengunci buffer kamera (GPU Lock) 
+              // yang menyebabkan video preview freeze/macet total saat hitung mundur!
               let options: any = { mimeType: 'video/webm' };
-              if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
-                options = { mimeType: 'video/mp4; codecs="avc1.42E01E"' };
-              } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
-                options = { mimeType: 'video/webm; codecs=h264' };
-              }
-              recorderRef.current = new MediaRecorder(streamRef.current, options);
+              
+              // CLONE THE STREAM: 
+              // Mencegah bug Chromium di mana MediaRecorder.start() membekukan <video> preview
+              const recordStream = streamRef.current.clone();
+              recorderRef.current = new MediaRecorder(recordStream, options);
               recorderRef.current.ondataavailable = (e) => {
                 if (e.data.size > 0) chunksRef.current.push(e.data);
               };
               recorderRef.current.onstop = () => {
                 const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-                setVideos(prev => {
-                  const newVids = [...prev];
-                  newVids[currentFrameRef.current] = blob;
-                  return newVids;
-                });
+                videosRef.current[currentFrameRef.current] = blob; // Simpan secara sinkron
+                setVideos([...videosRef.current]);                 // Update UI
                 chunksRef.current = [];
               };
             } catch (e) {
@@ -675,21 +677,25 @@ function CameraContent() {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
     
-    // Validasi hasil canvas — pastikan bukan gambar hitam/kosong
-    const checkPixel = ctx.getImageData(Math.floor(w / 2), Math.floor(h / 2), 1, 1).data;
-    const isBlack = checkPixel[0] === 0 && checkPixel[1] === 0 && checkPixel[2] === 0;
-    if (isBlack) {
-      // Coba cek sudut lain jika tengahnya hitam (mungkin objek di tengah saja yang hitam)
-      const edgePixel = ctx.getImageData(Math.floor(w / 4), Math.floor(h / 4), 1, 1).data;
-      if (edgePixel[0] === 0 && edgePixel[1] === 0 && edgePixel[2] === 0) {
-        console.error(`Captured photo is entirely black! Retry count: ${retryCount}`);
-        if (retryCount < 15) {
-          // Tunggu 150ms agar cermin DSLR turun atau frame webcam masuk, lalu coba lagi
-          setTimeout(() => capturePhoto(retryCount + 1), 150);
-          return;
-        }
-        // Jika sudah lebih dari 15 kali (2 detik) masih hitam, terpaksa lanjut agar tidak hang
+    // Validasi hasil canvas: Hitung rata-rata kecerahan (luminance) untuk mendeteksi frame gelap/hitam
+    // karena sensor kamera asli memiliki 'noise' (tidak pernah persis 0,0,0).
+    const sampleData = ctx.getImageData(0, 0, w, h).data;
+    let totalLuminance = 0;
+    let sampleCount = 0;
+    // Cek setiap 100 pixel untuk kecepatan eksekusi
+    for (let i = 0; i < sampleData.length; i += 4 * 100) {
+      totalLuminance += (sampleData[i] + sampleData[i+1] + sampleData[i+2]) / 3;
+      sampleCount++;
+    }
+    const avgLuminance = totalLuminance / sampleCount;
+
+    if (avgLuminance < 8) { // Jika rata-rata kecerahan sangat rendah (hitam pekat + noise)
+      console.error(`Captured photo is too dark (Luminance: ${avgLuminance.toFixed(2)}). Retry count: ${retryCount}`);
+      if (retryCount < 30) { // Tunggu hingga 4.5 detik untuk DSLR recovery
+        setTimeout(() => capturePhoto(retryCount + 1), 150);
+        return;
       }
+      console.warn("Mencapai batas retry, menyimpan foto gelap secara paksa.");
     }
     
     const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
@@ -727,6 +733,8 @@ function CameraContent() {
   }, [showPreview, autoAdvance, photos]);
 
   const handleNext = async (autoTrigger = false) => {
+    // OPTIMASI: Tunggu 100ms agar recorder.onstop() 100% selesai memproses Blob video terakhir
+    await new Promise(r => setTimeout(r, 100));
 
     setShowPreview(false);
 
@@ -785,7 +793,7 @@ function CameraContent() {
 
       localStorage.setItem("capturedPhotos", JSON.stringify(finalPhotos));
 
-      await localforage.setItem("liveVideos", videos);
+      await localforage.setItem("liveVideos", videosRef.current); // Gunakan REF agar data terbaru PASTI masuk
 
       router.push(`/render?kanvas=${canvasType}&template=${templateId}&time=${timeLeft}`);
 
@@ -811,7 +819,8 @@ function CameraContent() {
 
     setPhotos((prev) => { const u = [...prev]; u[currentFrame] = null; return u; });
 
-    setVideos((prev) => { const u = [...prev]; u[currentFrame] = null; return u; });
+    videosRef.current[currentFrame] = null;
+    setVideos([...videosRef.current]);
 
     setShowPreview(false);
     
@@ -866,7 +875,7 @@ function CameraContent() {
       if (recorderRef.current && recorderRef.current.state === "inactive") {
         chunksRef.current = [];
         try {
-          recorderRef.current.start(100);
+          recorderRef.current.start();
         } catch (e) {
           console.error("Failed to start recording", e);
         }
@@ -1009,9 +1018,9 @@ function CameraContent() {
 
                  {/* Countdown Overlay */}
                  {countdown !== null && (
-                   <div className="absolute inset-0 flex items-center justify-center z-30">
-                     <span className={`${poppins.className} text-[8rem] lg:text-[12rem] text-white drop-shadow-2xl animate-ping font-black`}>{countdown}</span>
-                   </div>
+                    <div className="absolute inset-0 flex items-center justify-center z-30">
+                      <span className={`${poppins.className} text-[8rem] lg:text-[12rem] text-white animate-pulse font-black`} style={{ textShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>{countdown}</span>
+                    </div>
                  )}
 
                  {/* Flash Overlay */}
