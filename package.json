@@ -1,6 +1,6 @@
 {
   "name": "my-app",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "main": "main.js",
   "author": "RoamBooth",
@@ -47,7 +47,7 @@
   "build": {
     "compression": "maximum",
     "appId": "com.roambooth.machine1",
-    "productName": "RoamBooth Machine",
+    "productName": "CTECHBOOTH",
     "publish": [
       {
         "provider": "github",
@@ -71,7 +71,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/favicon.ico"
+      "icon": "public/logo/logo.png"
     },
     "asarUnpack": [
       "**/node_modules/ffmpeg-static/**/*"

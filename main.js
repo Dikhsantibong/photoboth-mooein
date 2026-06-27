@@ -81,6 +81,7 @@ function createWindow() {
     // Mengaktifkan layar penuh permanen dan menyembunyikan menu bar
     fullscreen: true,
     autoHideMenuBar: true,
+    icon: path.join(__dirname, 'public/logo/logo.png'),
   });
 
   // Memuat server Next.js (baik dev maupun prod)
