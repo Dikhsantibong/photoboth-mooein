@@ -57,22 +57,35 @@ export async function POST(req: Request) {
       throw new Error(`FFmpeg binary not found. Evaluated paths: ${possiblePaths.join(", ")}`);
     }
 
-    // Using execFile securely passes arguments to the OS without cmd.exe space stripping
-    const args = [
-      "-y",
-      "-i", inputPath,
-      "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-crf", "32", // Tingkatkan kompresi agar MP4 tidak terlalu besar
-      "-pix_fmt", "yuv420p",
-      "-movflags", "+faststart",
-      "-an",
-      "-vf", "scale='min(iw,640)':-2", // Resize sedikit lebih kecil untuk mengurangi size
-      outputPath
-    ]
-    
-    console.log(`[convert-video] Executing: ${absoluteFfmpegPath} ${args.join(" ")}`)
-    await execFileAsync(absoluteFfmpegPath, args, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 })
+    // We try to simply copy the stream (demux/remux) first. This takes 0.05 seconds for H.264 streams.
+    // If the stream is VP8, putting it in MP4 with 'copy' will throw an error, which we catch and fallback to transcoding.
+    try {
+      const fastArgs = [
+        "-y",
+        "-i", inputPath,
+        "-c:v", "copy",
+        "-an",
+        outputPath
+      ];
+      console.log(`[convert-video] Attempting fast remux: ${absoluteFfmpegPath} ${fastArgs.join(" ")}`);
+      await execFileAsync(absoluteFfmpegPath, fastArgs, { timeout: 10000, maxBuffer: 10 * 1024 * 1024 });
+    } catch (fastErr) {
+      console.log(`[convert-video] Fast remux failed (likely VP8 codec). Falling back to libx264 transcoding...`);
+      const transcodeArgs = [
+        "-y",
+        "-i", inputPath,
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-crf", "32",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-an",
+        "-vf", "scale='min(iw,640)':-2",
+        outputPath
+      ];
+      console.log(`[convert-video] Executing fallback: ${absoluteFfmpegPath} ${transcodeArgs.join(" ")}`);
+      await execFileAsync(absoluteFfmpegPath, transcodeArgs, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
+    }
     
     // Read the converted MP4
     const mp4Buffer = fs.readFileSync(outputPath)

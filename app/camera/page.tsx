@@ -464,10 +464,15 @@ function CameraContent() {
             }
             const ctx = liveCanvas.getContext('2d');
             if (ctx) {
+              // Bersihkan canvas sebelum menggambar ulang
+              ctx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+              
+              // Trik Rahasia: Gunakan osilasi Global Alpha 1% untuk memaksa Chrome mengirim frame.
+              // Chrome mengabaikan perubahan 1x1 pixel, jadi kita harus mengubah seluruh gambar.
+              // 0.99 alpha tidak terlihat oleh mata, tapi merubah nilai RGB seluruh pixel sehingga FPS video jadi stabil (tidak fast-forward).
+              ctx.globalAlpha = (Date.now() % 2 === 0) ? 1.0 : 0.99;
               ctx.drawImage(latestImg, 0, 0);
-              // Force invisible change every frame to prevent Chrome from dropping identical frames (causing super fast playback bug)
-              ctx.fillStyle = `rgb(${Date.now() % 255}, 0, 0)`;
-              ctx.fillRect(0, 0, 1, 1);
+              ctx.globalAlpha = 1.0;
             }
             if (!streamRef.current) {
               const stream = liveCanvas.captureStream(30);
@@ -561,7 +566,7 @@ function CameraContent() {
 
 
 
-  const capturePhoto = async () => {
+  const capturePhoto = async (retryCount = 0) => {
 
     if (!videoRef.current || !canvasRef.current) return;
 
@@ -677,8 +682,13 @@ function CameraContent() {
       // Coba cek sudut lain jika tengahnya hitam (mungkin objek di tengah saja yang hitam)
       const edgePixel = ctx.getImageData(Math.floor(w / 4), Math.floor(h / 4), 1, 1).data;
       if (edgePixel[0] === 0 && edgePixel[1] === 0 && edgePixel[2] === 0) {
-        console.error("Captured photo is entirely black! Discarding.");
-        // We removed the return statement to allow the process to continue even if black
+        console.error(`Captured photo is entirely black! Retry count: ${retryCount}`);
+        if (retryCount < 15) {
+          // Tunggu 150ms agar cermin DSLR turun atau frame webcam masuk, lalu coba lagi
+          setTimeout(() => capturePhoto(retryCount + 1), 150);
+          return;
+        }
+        // Jika sudah lebih dari 15 kali (2 detik) masih hitam, terpaksa lanjut agar tidak hang
       }
     }
     
