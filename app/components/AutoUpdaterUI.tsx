@@ -11,6 +11,13 @@ export default function AutoUpdaterUI() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    // Pulihkan status jika pembaruan sudah selesai diunduh sebelumnya (melewati navigasi halaman)
+    const savedState = sessionStorage.getItem("appUpdateState");
+    if (savedState === "downloaded") {
+      setUpdateState("downloaded");
+      setVisible(true);
+    }
+
     // Only run in Electron environment
     if (typeof window !== "undefined" && (window as any).electron?.onUpdateMessage) {
       (window as any).electron.onUpdateMessage((message: any) => {
@@ -18,7 +25,6 @@ export default function AutoUpdaterUI() {
 
         if (type === "checking-for-update") {
           // You might not want to show UI just for checking unless user clicked a button
-          // But for now let's keep it silent or brief
         } else if (type === "update-available") {
           setUpdateState("available");
           setVisible(true);
@@ -30,10 +36,12 @@ export default function AutoUpdaterUI() {
         } else if (type === "update-downloaded") {
           setUpdateState("downloaded");
           setVisible(true);
+          sessionStorage.setItem("appUpdateState", "downloaded"); // Simpan state
         } else if (type === "error") {
           setUpdateState("error");
           setErrorMsg(data || "Unknown Error");
           setVisible(true);
+          sessionStorage.removeItem("appUpdateState");
         }
       });
     }
@@ -50,9 +58,6 @@ export default function AutoUpdaterUI() {
           {updateState === "error" && <><AlertTriangle className="w-4 h-4 text-rose-500" /> Gagal Memperbarui</>}
           {updateState === "available" && <><RefreshCw className="w-4 h-4 text-amber-500 animate-spin" /> Pembaruan Ditemukan</>}
         </h3>
-        <button onClick={() => setVisible(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
-          <X className="w-4 h-4" />
-        </button>
       </div>
 
       {updateState === "downloading" && (
