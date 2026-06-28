@@ -552,19 +552,19 @@ function RenderContent() {
         router.push(`/print?kanvas=${canvasType}&template=${templateId}`);
       };
 
-      // ── Hitung durasi & boomerang berdasarkan countdown setting ──
+      // ── Hitung durasi & pengulangan berdasarkan countdown setting ──
       const savedCountdownDuration = parseInt(localStorage.getItem("countdownDuration") || "3", 10);
-      const useBoomerang = savedCountdownDuration <= 5; // boomerang untuk 3 & 5 detik
-      const renderDurationMs = useBoomerang
-        ? savedCountdownDuration * 2 * 1000 // 3s→6s, 5s→10s (Maju + Mundur)
+      const useLooping = savedCountdownDuration <= 5; // putar 2x untuk 3 & 5 detik agar durasi lebih panjang
+      const renderDurationMs = useLooping
+        ? savedCountdownDuration * 2 * 1000 // 3s→6s, 5s→10s (Maju + Maju Ulang)
         : savedCountdownDuration * 1000;     // 10s→10s
 
-      // Buat urutan foto boomerang: [0,1,2,3,2,1] untuk maju-mundur
-      const buildBoomerangSequence = (count: number): number[] => {
+      // Buat urutan foto looping: [0,1,2,0,1,2] untuk maju berulang
+      const buildLoopingSequence = (count: number): number[] => {
         if (count <= 1) return [0];
         const seq: number[] = [];
         for (let i = 0; i < count; i++) seq.push(i);
-        for (let i = count - 2; i > 0; i--) seq.push(i);
+        for (let i = 0; i < count; i++) seq.push(i);
         return seq;
       };
 
@@ -639,9 +639,9 @@ function RenderContent() {
         const startTime = Date.now();
         const duration = renderDurationMs;
 
-        // Bangun sequence foto: boomerang atau linear
-        const photoSequence = useBoomerang
-          ? buildBoomerangSequence(photoElements.length)
+        // Bangun sequence foto: looping atau linear
+        const photoSequence = useLooping
+          ? buildLoopingSequence(photoElements.length)
           : Array.from({ length: photoElements.length }, (_, i) => i);
 
         // Standar photobooth GIF: ~750ms per foto agar perpindahan terasa natural
@@ -752,15 +752,9 @@ function RenderContent() {
         });
 
         const startTime = Date.now();
-        // Durasi live video menyesuaikan countdown: 3s→6s(boomerang), 5s→10s(boomerang), 10s→10s
+        // Durasi live video menyesuaikan countdown: 3s→6s(loop 2x), 5s→10s(loop 2x), 10s→10s
         const duration = renderDurationMs;
-
-        // ── Frame Cache untuk Boomerang ──
-        // Selama putar MAJU: tangkap frame komposit ke memori setiap ~66ms (15fps)
-        // Selama putar MUNDUR: gambar ulang dari cache (tanpa seeking = tanpa lag)
-        const CACHE_INTERVAL_MS = 66;
-        const cachedFrames: (ImageBitmap | null)[] = [];
-        let lastCacheTime = -CACHE_INTERVAL_MS;
+        let lastPass = 0;
 
         // Helper: gambar 1 frame komposit ke canvas video
         const drawCompositeFrame = () => {
@@ -851,59 +845,25 @@ function RenderContent() {
             if (recorder.state === "recording") {
               recorder.stop();
             }
-            cachedFrames.length = 0;
             return;
           }
 
-          if (elapsed < singlePassDuration || !useBoomerang) {
-            // ── PASS 0 (MAJU): video bermain natural
-            drawCompositeFrame();
-
-            // Cache frame setiap CACHE_INTERVAL_MS
-            if (elapsed - lastCacheTime >= CACHE_INTERVAL_MS) {
-              // OPTIMASI MEMORI ekstrim: Gunakan ImageBitmap alih-alih elemen <canvas>!
-              // Membuat puluhan kanvas HD akan menghantam "Canvas Context Limit" bawaan Chrome
-              // yang menyebabkan perekaman terhenti di detik pertama. ImageBitmap melewati limit ini.
-              const frameIndex = cachedFrames.length;
-              cachedFrames.push(null); // placeholder berurutan
-              
-              if (typeof createImageBitmap !== "undefined") {
-                createImageBitmap(videoRenderCanvas).then(bmp => {
-                  cachedFrames[frameIndex] = bmp;
-                }).catch(() => {});
-              } else {
-                // Fallback untuk browser lawas yang tidak mendukung ImageBitmap
-                const snap = document.createElement('canvas');
-                snap.width = vidW;
-                snap.height = vidH;
-                const snapCtx = snap.getContext('2d');
-                if (snapCtx) snapCtx.drawImage(videoRenderCanvas, 0, 0, vidW, vidH);
-                cachedFrames[frameIndex] = snap as any;
+          // Hitung siklus putaran (pass) saat ini
+          const currentPass = Math.floor(elapsed / singlePassDuration);
+          
+          // Jika kita memasuki putaran baru (karena diulang/looping)
+          if (currentPass > lastPass) {
+            videoElements.forEach(v => {
+              if (v.src) {
+                v.currentTime = 0; // Reset video ke awal
+                v.play().catch(() => {});
               }
-              
-              lastCacheTime = elapsed;
-            }
-          } else {
-            // ── PASS 1+ (MUNDUR/MAJU ulangan): pakai cache agar ringan
-            const currentPass = Math.floor(elapsed / singlePassDuration);
-            const isReversePass = currentPass % 2 !== 0; 
-            
-            const passElapsed = elapsed - (currentPass * singlePassDuration);
-            let progress = Math.min(1, passElapsed / singlePassDuration); // 0→1
-            
-            if (isReversePass) {
-              progress = 1 - progress; // Mundur
-            }
-            
-            const frameIdx = Math.max(0, Math.min(cachedFrames.length - 1, Math.floor(progress * cachedFrames.length)));
-
-            if (cachedFrames[frameIdx]) {
-              // Gambar ulang cache dengan ukuran aslinya (diperbesar kembali)
-              vidCtx.drawImage(cachedFrames[frameIdx], 0, 0, vidW, vidH);
-            } else {
-              drawCompositeFrame(); // fallback
-            }
+            });
+            lastPass = currentPass;
           }
+
+          // ── Menggambar Video Secara Natural (Tanpa Cache Berat) ──
+          drawCompositeFrame();
 
           // Force frame emission for MediaRecorder
           vidCtx.fillStyle = `rgb(${Date.now() % 255}, 0, 0)`;
