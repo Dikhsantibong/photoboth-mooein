@@ -675,24 +675,21 @@ function RenderContent() {
           }
 
           // Force frame emission for MediaRecorder
-          gifCtx.fillStyle = `rgb(${Date.now() % 255}, 0, 0)`;
-          gifCtx.fillRect(0, 0, 1, 1);
-
           animationFrameRef.current = requestAnimationFrame(renderGifLoop);
         };
         renderGifLoop();
       };
 
       if (videoElements.some(v => v.src)) {
-        let options: any = { mimeType: 'video/webm', videoBitsPerSecond: 5000000 }; // 5 Mbps untuk kualitas HD
+        let options: any = { mimeType: 'video/webm' };
         if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
-          options = { mimeType: 'video/mp4; codecs="avc1.42E01E"', videoBitsPerSecond: 5000000 };
+          options = { mimeType: 'video/mp4; codecs="avc1.42E01E"' };
         } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
-          options = { mimeType: 'video/webm; codecs=h264', videoBitsPerSecond: 5000000 };
+          options = { mimeType: 'video/webm; codecs=h264' };
         }
 
-        // OPTIMASI: Gunakan canvas terpisah untuk render video agar GPU tidak crash, namun dengan resolusi HD (1080px)
-        const maxVideoDim = 1080;
+        // Canvas video terpisah yang lebih kecil agar GPU tidak crash (max 720px)
+        const maxVideoDim = 720;
         let vidW = dim.w;
         let vidH = dim.h;
         if (dim.w > maxVideoDim || dim.h > maxVideoDim) {
@@ -705,21 +702,18 @@ function RenderContent() {
           }
         }
 
-        const videoRenderCanvas = document.createElement('canvas');
-        videoRenderCanvas.width = vidW;
-        videoRenderCanvas.height = vidH;
-        const vidCtx = videoRenderCanvas.getContext('2d');
+        const videoCanvas = document.createElement('canvas');
+        videoCanvas.width = vidW;
+        videoCanvas.height = vidH;
+        const vidCtx = videoCanvas.getContext('2d');
         if (!vidCtx) return;
 
-        // Initial draw
+        // Pre-draw agar canvas tidak kosong saat captureStream dimulai
         vidCtx.fillStyle = "#ffffff";
         vidCtx.fillRect(0, 0, vidW, vidH);
-        if (baseImg.src) {
-          vidCtx.drawImage(baseImg, 0, 0, vidW, vidH);
-        }
-        
-        // Turunkan framerate menjadi 20fps agar ukuran file tidak terlalu membengkak
-        const stream = videoRenderCanvas.captureStream(20);
+        if (baseImg.src) vidCtx.drawImage(baseImg, 0, 0, vidW, vidH);
+
+        const stream = videoCanvas.captureStream(30);
         const recorder = new MediaRecorder(stream, options);
         const chunks: BlobPart[] = [];
 
@@ -728,36 +722,38 @@ function RenderContent() {
         };
 
         recorder.onstop = async () => {
-          const finalBlob = new Blob(chunks, { type: 'video/webm' });
-          await localforage.setItem("finalLiveVideo", 
-            finalBlob);
+          const finalBlob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+          await localforage.setItem("finalLiveVideo", finalBlob);
           videoElements.forEach(v => v.src && URL.revokeObjectURL(v.src));
           generateGifVideo();
         };
 
         recorder.start();
-        
-        // Dapatkan durasi asli video untuk boomerang timing, filter Infinity bug dari Chrome WebM
-        const videoDurations = videoElements.map(v => {
-          if (!v.duration || !Number.isFinite(v.duration)) return savedCountdownDuration;
-          return v.duration;
-        });
-        const singlePassDuration = Math.max(...videoDurations) * 1000; // durasi 1x putar dalam ms
-        
         videoElements.forEach(v => {
           if (v.src) {
             v.currentTime = 0;
+            v.loop = true;
             v.play().catch(() => { });
           }
         });
 
         const startTime = Date.now();
-        // Durasi live video menyesuaikan countdown: 3s→6s(loop 2x), 5s→10s(loop 2x), 10s→10s
-        const duration = renderDurationMs;
-        let lastPass = 0;
+        const duration = 6000;
 
-        // Helper: gambar 1 frame komposit ke canvas video
-        const drawCompositeFrame = () => {
+        const renderLoop = () => {
+          const elapsed = Date.now() - startTime;
+          setLoadingProgress(Math.min(99, Math.round((elapsed / duration) * 100)));
+
+          if (elapsed > duration) {
+            setLoadingProgress(100);
+            recorder.stop();
+            return;
+          }
+
+          // Skala dari template asli ke canvas video
+          const scaleX = vidW / dim.w;
+          const scaleY = vidH / dim.h;
+
           // 1. Gambar Base Statis
           vidCtx.fillStyle = "#ffffff";
           vidCtx.fillRect(0, 0, vidW, vidH);
@@ -768,18 +764,11 @@ function RenderContent() {
             const vid = videoElements[i];
             const fr = frames[i];
             if (vid.src && fr) {
-              const x = parseInt(fr.x, 10);
-              const y = parseInt(fr.y, 10);
-              const fw = parseInt(fr.width, 10);
-              const fh = parseInt(fr.height, 10);
-
-              // Skala koordinat template asli ke ukuran kanvas video yang lebih kecil
-              const scaleX = vidW / dim.w;
-              const scaleY = vidH / dim.h;
-              const scaledX = x * scaleX;
-              const scaledY = y * scaleY;
-              const scaledFw = fw * scaleX;
-              const scaledFh = fh * scaleY;
+              const x = parseInt(fr.x, 10) * scaleX;
+              const y = parseInt(fr.y, 10) * scaleY;
+              const fw = parseInt(fr.width, 10) * scaleX;
+              const fh = parseInt(fr.height, 10) * scaleY;
+              const angle = fr.angle ? parseFloat(fr.angle) : 0;
 
               const CAMERA_ZOOM = 1.20;
               const cropW = vid.videoWidth / CAMERA_ZOOM;
@@ -801,12 +790,10 @@ function RenderContent() {
 
               try {
                 vidCtx.save();
-                vidCtx.translate(scaledX + scaledFw / 2, scaledY + scaledFh / 2);
-                if (fr.angle) {
-                  vidCtx.rotate((fr.angle * Math.PI) / 180);
-                }
+                vidCtx.translate(x + fw / 2, y + fh / 2);
+                vidCtx.rotate((angle * Math.PI) / 180);
                 vidCtx.scale(-1, 1);
-                vidCtx.drawImage(vid, sx, sy, sw, sh, -scaledFw / 2, -scaledFh / 2, scaledFw, scaledFh);
+                vidCtx.drawImage(vid, sx, sy, sw, sh, -fw / 2, -fh / 2, fw, fh);
                 vidCtx.restore();
               } catch (e) { }
             }
@@ -821,8 +808,6 @@ function RenderContent() {
           for (const { img, st } of stickerImages) {
             if (img.src) {
               vidCtx.save();
-              const scaleX = vidW / dim.w;
-              const scaleY = vidH / dim.h;
               vidCtx.translate(st.x * scaleX, st.y * scaleY);
               vidCtx.rotate((st.rotation * Math.PI) / 180);
               vidCtx.scale(st.scale * scaleX, st.scale * scaleY);
@@ -834,40 +819,6 @@ function RenderContent() {
           }
 
           if (canvasRef.current) vidCtx.drawImage(canvasRef.current, 0, 0, vidW, vidH);
-        };
-
-        const renderLoop = () => {
-          const elapsed = Date.now() - startTime;
-          setLoadingProgress(Math.min(99, Math.round((elapsed / duration) * 100)));
-
-          if (elapsed > duration) {
-            setLoadingProgress(100);
-            if (recorder.state === "recording") {
-              recorder.stop();
-            }
-            return;
-          }
-
-          // Hitung siklus putaran (pass) saat ini
-          const currentPass = Math.floor(elapsed / singlePassDuration);
-          
-          // Jika kita memasuki putaran baru (karena diulang/looping)
-          if (currentPass > lastPass) {
-            videoElements.forEach(v => {
-              if (v.src) {
-                v.currentTime = 0; // Reset video ke awal
-                v.play().catch(() => {});
-              }
-            });
-            lastPass = currentPass;
-          }
-
-          // ── Menggambar Video Secara Natural (Tanpa Cache Berat) ──
-          drawCompositeFrame();
-
-          // Force frame emission for MediaRecorder
-          vidCtx.fillStyle = `rgb(${Date.now() % 255}, 0, 0)`;
-          vidCtx.fillRect(0, 0, 1, 1);
 
           animationFrameRef.current = requestAnimationFrame(renderLoop);
         };
